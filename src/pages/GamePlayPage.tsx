@@ -1,29 +1,92 @@
 import { useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
 import { Header } from "@/components/layout/Header";
-import { Disclaimer } from "@/components/layout/Disclaimer";
 import { SlotMachine } from "@/components/games/SlotMachine";
 import { RouletteGame } from "@/components/games/RouletteGame";
 import { BlackjackGame } from "@/components/games/BlackjackGame";
+import { MinesGame } from "@/components/games/MinesGame";
+import { PlinkoGame } from "@/components/games/PlinkoGame";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Lock } from "lucide-react";
 
+const GAME_CONFIGS = {
+  slots: {
+    id: 'slots',
+    name: 'Lucky Spin Slots',
+    enabled: true,
+    minBet: 10,
+    maxBet: 1000,
+    winProbability: 0.33,
+    payoutMultiplier: 2.5,
+  },
+  roulette: {
+    id: 'roulette',
+    name: 'Classic Roulette',
+    enabled: true,
+    minBet: 5,
+    maxBet: 500,
+    winProbability: 0.33,
+    payoutMultiplier: 2.5,
+  },
+  blackjack: {
+    id: 'blackjack',
+    name: '21 Blackjack',
+    enabled: true,
+    minBet: 20,
+    maxBet: 2000,
+    winProbability: 0.33,
+    payoutMultiplier: 2.5,
+  },
+  mines: {
+    id: 'mines',
+    name: 'Mines',
+    enabled: true,
+    minBet: 5,
+    maxBet: 500,
+    winProbability: 0.33,
+    payoutMultiplier: 2.5,
+  },
+  plinko: {
+    id: 'plinko',
+    name: 'Plinko',
+    enabled: true,
+    minBet: 5,
+    maxBet: 500,
+    winProbability: 0.33,
+    payoutMultiplier: 2.5,
+  },
+};
+
 const GamePlayPage = () => {
   const { gameId } = useParams<{ gameId: string }>();
-  const { currentUser, games } = useGameStore();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!currentUser) {
+    if (!loading && !user) {
       navigate('/auth');
     }
-  }, [currentUser, navigate]);
+  }, [loading, user, navigate]);
 
-  if (!currentUser) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1 }}
+          className="text-4xl"
+        >
+          🎰
+        </motion.div>
+      </div>
+    );
+  }
 
-  const gameConfig = games.find(g => g.id === gameId);
+  if (!user) return null;
+
+  const gameConfig = gameId ? GAME_CONFIGS[gameId as keyof typeof GAME_CONFIGS] : null;
   
   if (!gameConfig) {
     return (
@@ -59,7 +122,6 @@ const GamePlayPage = () => {
             </Link>
           </motion.div>
         </main>
-        <Disclaimer />
       </div>
     );
   }
@@ -72,6 +134,10 @@ const GamePlayPage = () => {
         return <RouletteGame gameConfig={gameConfig} />;
       case 'blackjack':
         return <BlackjackGame gameConfig={gameConfig} />;
+      case 'mines':
+        return <MinesGame />;
+      case 'plinko':
+        return <PlinkoGame />;
       default:
         return null;
     }
@@ -81,7 +147,7 @@ const GamePlayPage = () => {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pt-24 pb-20 px-4">
+      <main className="pt-24 pb-12 px-4">
         <div className="container mx-auto max-w-4xl">
           {/* Back Button */}
           <motion.div
@@ -90,7 +156,7 @@ const GamePlayPage = () => {
             className="mb-8"
           >
             <Link to="/games">
-              <Button variant="ghost">
+              <Button variant="ghost" className="gap-2">
                 <ArrowLeft className="w-4 h-4" />
                 All Games
               </Button>
@@ -107,8 +173,6 @@ const GamePlayPage = () => {
           </motion.div>
         </div>
       </main>
-
-      <Disclaimer />
     </div>
   );
 };

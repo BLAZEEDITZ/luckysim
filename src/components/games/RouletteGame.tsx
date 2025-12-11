@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -12,6 +13,7 @@ import {
   getRouletteColor 
 } from "@/lib/gameUtils";
 import { Coins, Minus, Plus } from "lucide-react";
+import { toast } from "sonner";
 
 interface RouletteGameProps {
   gameConfig: {
@@ -25,7 +27,7 @@ interface RouletteGameProps {
 type BetType = 'red' | 'black' | 'number';
 
 export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
-  const { currentUser, updateBalance, placeBet } = useGameStore();
+  const { profile, user, updateBalance } = useAuth();
   const [bet, setBet] = useState(gameConfig.minBet);
   const [betType, setBetType] = useState<BetType>('red');
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
@@ -35,19 +37,19 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
   const [displayNumber, setDisplayNumber] = useState<number | null>(null);
 
   const spin = async () => {
-    if (!currentUser || spinning || bet > currentUser.balance) return;
+    if (!user || !profile || spinning || bet > profile.balance) return;
     if (betType === 'number' && selectedNumber === null) return;
 
     setSpinning(true);
     setResult(null);
-    updateBalance(-bet);
+    await updateBalance(-bet);
 
     // Animate wheel
     const spinDuration = 3000;
     const interval = 100;
     let elapsed = 0;
 
-    const spinInterval = setInterval(() => {
+    const spinInterval = setInterval(async () => {
       setDisplayNumber(ROULETTE_NUMBERS[Math.floor(Math.random() * ROULETTE_NUMBERS.length)]);
       elapsed += interval;
 
@@ -71,7 +73,8 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
             finalNumber = selectedNumber!;
           }
           triggerWinConfetti();
-          updateBalance(payout);
+          await updateBalance(payout);
+          toast.success(`You won $${formatCredits(payout)}!`);
         } else {
           // Ensure loss
           if (betType === 'red') {
@@ -89,7 +92,16 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
         }
 
         setDisplayNumber(finalNumber);
-        placeBet('roulette', bet, won, payout);
+        
+        // Log bet to database
+        await supabase.from('bet_logs').insert({
+          user_id: user.id,
+          game: 'roulette',
+          bet_amount: bet,
+          won,
+          payout: won ? payout : 0
+        });
+
         setResult({ won, amount: payout, number: finalNumber });
         setSpinning(false);
       }
@@ -108,20 +120,22 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
     return 'bg-emerald-600';
   };
 
+  const balance = profile?.balance ?? 0;
+
   return (
-    <Card glow="emerald" className="w-full max-w-2xl mx-auto overflow-hidden">
-      <CardHeader className="text-center bg-gradient-to-b from-secondary/20 to-transparent">
-        <CardTitle className="text-secondary text-3xl">Classic Roulette</CardTitle>
+    <Card className="w-full max-w-2xl mx-auto overflow-hidden border-secondary/20 bg-gradient-to-b from-card to-background">
+      <CardHeader className="text-center bg-gradient-to-b from-secondary/10 to-transparent border-b border-secondary/10">
+        <CardTitle className="text-secondary text-3xl font-display">Classic Roulette</CardTitle>
         <p className="text-muted-foreground">Place your bet and spin the wheel!</p>
       </CardHeader>
       
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 p-6">
         {/* Wheel Display */}
         <motion.div 
-          className={`flex flex-col items-center justify-center p-8 bg-muted rounded-xl ${shake ? 'animate-shake' : ''}`}
+          className={`flex flex-col items-center justify-center p-8 bg-gradient-to-b from-muted to-muted/50 rounded-2xl border border-border/50 ${shake ? 'animate-shake' : ''}`}
         >
           <motion.div
-            className={`w-32 h-32 rounded-full flex items-center justify-center text-5xl font-bold border-4 border-primary/50 shadow-lg ${
+            className={`w-32 h-32 rounded-full flex items-center justify-center text-5xl font-bold border-4 border-primary/50 shadow-xl ${
               displayNumber !== null ? getNumberColor(displayNumber) : 'bg-muted'
             }`}
             animate={spinning ? { rotate: 360 } : {}}
@@ -144,7 +158,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className={`text-center p-4 rounded-lg ${
+              className={`text-center p-4 rounded-xl ${
                 result.won 
                   ? 'bg-secondary/20 border border-secondary text-secondary' 
                   : 'bg-destructive/20 border border-destructive text-destructive'
@@ -152,7 +166,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
             >
               <p className="text-lg font-bold">
                 {result.won 
-                  ? `🎉 You won ${formatCredits(result.amount)} credits!` 
+                  ? `🎉 You won $${formatCredits(result.amount)}!` 
                   : `😔 The ball landed on ${result.number}. Better luck next time!`}
               </p>
             </motion.div>
@@ -193,7 +207,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="grid grid-cols-6 sm:grid-cols-9 gap-1 p-4 bg-muted rounded-lg"
+              className="grid grid-cols-6 sm:grid-cols-9 gap-1 p-4 bg-muted/50 rounded-xl border border-border/50"
             >
               {ROULETTE_NUMBERS.map((num) => (
                 <Button
@@ -221,13 +235,14 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
               size="icon"
               onClick={() => adjustBet(-5)}
               disabled={bet <= gameConfig.minBet || spinning}
+              className="rounded-full"
             >
               <Minus className="w-4 h-4" />
             </Button>
             
-            <div className="flex items-center gap-2 px-4 py-2 bg-muted rounded-lg min-w-[120px] justify-center">
-              <Coins className="w-5 h-5 text-primary" />
-              <span className="text-xl font-bold text-primary">{formatCredits(bet)}</span>
+            <div className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-secondary/20 to-secondary/10 rounded-xl min-w-[140px] justify-center border border-secondary/30">
+              <Coins className="w-5 h-5 text-secondary" />
+              <span className="text-xl font-bold text-secondary">${formatCredits(bet)}</span>
             </div>
             
             <Button
@@ -235,6 +250,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
               size="icon"
               onClick={() => adjustBet(5)}
               disabled={bet >= gameConfig.maxBet || spinning}
+              className="rounded-full"
             >
               <Plus className="w-4 h-4" />
             </Button>
@@ -243,9 +259,9 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
           <Button
             variant="emerald"
             size="xl"
-            className="w-full"
+            className="w-full text-lg font-bold"
             onClick={spin}
-            disabled={spinning || !currentUser || bet > currentUser.balance || (betType === 'number' && selectedNumber === null)}
+            disabled={spinning || !user || bet > balance || (betType === 'number' && selectedNumber === null)}
           >
             {spinning ? (
               <>

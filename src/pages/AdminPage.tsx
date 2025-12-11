@@ -1,48 +1,194 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Header } from "@/components/layout/Header";
-import { Disclaimer } from "@/components/layout/Disclaimer";
 import { formatCredits } from "@/lib/gameUtils";
+import { toast } from "sonner";
 import { 
   Users, 
   TrendingUp, 
   Coins, 
-  BarChart3, 
-  RefreshCw,
-  Power,
-  PowerOff,
-  Shield
+  BarChart3,
+  Shield,
+  CheckCircle,
+  XCircle,
+  Clock,
+  ArrowDownToLine,
+  ArrowUpFromLine
 } from "lucide-react";
 
+interface Transaction {
+  id: string;
+  user_id: string;
+  type: string;
+  amount: number;
+  status: string;
+  created_at: string;
+  user_email?: string;
+}
+
+interface Profile {
+  id: string;
+  email: string;
+  balance: number;
+  created_at: string;
+}
+
+interface BetLog {
+  id: string;
+  user_id: string;
+  game: string;
+  bet_amount: number;
+  won: boolean;
+  payout: number;
+  created_at: string;
+  user_email?: string;
+}
+
 const AdminPage = () => {
-  const { currentUser, getAllUsers, getStats, getBetLogs, games, toggleGame, resetUserBalance } = useGameStore();
+  const { user, isAdmin, loading } = useAuth();
   const navigate = useNavigate();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [betLogs, setBetLogs] = useState<BetLog[]>([]);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalBets: 0,
+    totalWagered: 0,
+    winRate: 0
+  });
 
   useEffect(() => {
-    if (!currentUser?.isAdmin) {
+    if (!loading && (!user || !isAdmin)) {
       navigate('/');
     }
-  }, [currentUser, navigate]);
+  }, [loading, user, isAdmin, navigate]);
 
-  if (!currentUser?.isAdmin) return null;
+  useEffect(() => {
+    if (isAdmin) {
+      fetchData();
+    }
+  }, [isAdmin]);
 
-  const users = getAllUsers();
-  const stats = getStats();
-  const betLogs = getBetLogs().slice(0, 50);
+  const fetchData = async () => {
+    // Fetch pending transactions
+    const { data: txData } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  const topPlayers = [...users]
-    .sort((a, b) => b.balance - a.balance)
-    .slice(0, 5);
+    // Fetch all profiles
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('balance', { ascending: false });
+
+    // Fetch bet logs
+    const { data: betData } = await supabase
+      .from('bet_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (profileData) {
+      setProfiles(profileData as Profile[]);
+      
+      // Enrich transactions with emails
+      if (txData) {
+        const enrichedTx = txData.map(tx => ({
+          ...tx,
+          user_email: profileData.find(p => p.id === tx.user_id)?.email || 'Unknown'
+        }));
+        setTransactions(enrichedTx as Transaction[]);
+      }
+
+      // Enrich bet logs with emails
+      if (betData) {
+        const enrichedBets = betData.map(bet => ({
+          ...bet,
+          user_email: profileData.find(p => p.id === bet.user_id)?.email || 'Unknown'
+        }));
+        setBetLogs(enrichedBets as BetLog[]);
+
+        // Calculate stats
+        const totalBets = betData.length;
+        const totalWagered = betData.reduce((acc, log) => acc + Number(log.bet_amount), 0);
+        const wins = betData.filter(log => log.won).length;
+
+        setStats({
+          totalUsers: profileData.length,
+          totalBets,
+          totalWagered,
+          winRate: totalBets > 0 ? (wins / totalBets) * 100 : 0
+        });
+      }
+    }
+  };
+
+  const handleApproveTransaction = async (tx: Transaction) => {
+    try {
+      // Update transaction status
+      await supabase
+        .from('transactions')
+        .update({ status: 'completed' })
+        .eq('id', tx.id);
+
+      // Update user balance
+      const balanceChange = tx.type === 'deposit' ? tx.amount : -tx.amount;
+      await supabase.rpc('update_balance', {
+        _user_id: tx.user_id,
+        _amount: balanceChange
+      });
+
+      toast.success(`${tx.type === 'deposit' ? 'Deposit' : 'Withdrawal'} approved!`);
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to approve transaction");
+    }
+  };
+
+  const handleRejectTransaction = async (tx: Transaction) => {
+    try {
+      await supabase
+        .from('transactions')
+        .update({ status: 'rejected' })
+        .eq('id', tx.id);
+
+      toast.success("Transaction rejected");
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to reject transaction");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1 }}
+          className="text-4xl"
+        >
+          ⚙️
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) return null;
+
+  const pendingTransactions = transactions.filter(tx => tx.status === 'pending');
+  const topPlayers = profiles.slice(0, 5);
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pt-24 pb-20 px-4">
+      <main className="pt-24 pb-12 px-4">
         <div className="container mx-auto max-w-7xl">
           {/* Header */}
           <motion.div
@@ -50,12 +196,12 @@ const AdminPage = () => {
             animate={{ opacity: 1, y: 0 }}
             className="flex items-center gap-4 mb-8"
           >
-            <div className="w-14 h-14 bg-primary/20 rounded-xl flex items-center justify-center">
+            <div className="w-14 h-14 bg-gradient-to-br from-primary/30 to-primary/10 rounded-2xl flex items-center justify-center border border-primary/30">
               <Shield className="w-7 h-7 text-primary" />
             </div>
             <div>
               <h1 className="text-3xl font-display font-bold text-gradient-gold">Admin Panel</h1>
-              <p className="text-muted-foreground">Manage games, users, and view statistics</p>
+              <p className="text-muted-foreground">Manage transactions and view statistics</p>
             </div>
           </motion.div>
 
@@ -67,15 +213,15 @@ const AdminPage = () => {
             className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
           >
             {[
-              { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-primary' },
-              { label: 'Total Bets', value: stats.totalBets, icon: BarChart3, color: 'text-secondary' },
-              { label: 'Total Wagered', value: formatCredits(stats.totalWagered), icon: Coins, color: 'text-amber-400' },
-              { label: 'Win Rate', value: `${stats.winRate.toFixed(1)}%`, icon: TrendingUp, color: 'text-emerald-400' },
-            ].map((stat, index) => (
-              <Card key={stat.label} glow="none" className="overflow-hidden">
+              { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-primary', bg: 'bg-primary/10' },
+              { label: 'Total Bets', value: stats.totalBets, icon: BarChart3, color: 'text-secondary', bg: 'bg-secondary/10' },
+              { label: 'Total Wagered', value: `$${formatCredits(stats.totalWagered)}`, icon: Coins, color: 'text-amber-400', bg: 'bg-amber-400/10' },
+              { label: 'Win Rate', value: `${stats.winRate.toFixed(1)}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+            ].map((stat) => (
+              <Card key={stat.label} className="overflow-hidden border-border/50 bg-gradient-to-b from-card to-background">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg bg-muted ${stat.color}`}>
+                    <div className={`p-3 rounded-xl ${stat.bg} ${stat.color}`}>
                       <stat.icon className="w-5 h-5" />
                     </div>
                     <div>
@@ -88,95 +234,113 @@ const AdminPage = () => {
             ))}
           </motion.div>
 
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Game Controls */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <Card glow="gold">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Power className="w-5 h-5 text-primary" />
-                    Game Controls
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {games.map((game) => (
-                    <div 
-                      key={game.id}
-                      className="flex items-center justify-between p-4 bg-muted rounded-lg"
-                    >
-                      <div>
-                        <p className="font-semibold">{game.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Bet: {game.minBet} - {formatCredits(game.maxBet)}
-                        </p>
-                      </div>
-                      <Button
-                        variant={game.enabled ? 'emerald' : 'destructive'}
-                        size="sm"
-                        onClick={() => toggleGame(game.id)}
+          {/* Pending Transactions - Most Important */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mb-8"
+          >
+            <Card className="border-amber-500/30 bg-gradient-to-b from-amber-500/5 to-transparent">
+              <CardHeader className="border-b border-border/50">
+                <CardTitle className="flex items-center gap-2 text-amber-400">
+                  <Clock className="w-5 h-5" />
+                  Pending Requests ({pendingTransactions.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {pendingTransactions.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">
+                    No pending requests
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {pendingTransactions.map((tx) => (
+                      <div
+                        key={tx.id}
+                        className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/30"
                       >
-                        {game.enabled ? (
-                          <>
-                            <Power className="w-4 h-4" />
-                            Enabled
-                          </>
-                        ) : (
-                          <>
-                            <PowerOff className="w-4 h-4" />
-                            Disabled
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </motion.div>
+                        <div className="flex items-center gap-3">
+                          {tx.type === 'deposit' ? (
+                            <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
+                              <ArrowDownToLine className="w-5 h-5 text-secondary" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                              <ArrowUpFromLine className="w-5 h-5 text-primary" />
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium capitalize">{tx.type}</p>
+                            <p className="text-sm text-muted-foreground truncate max-w-[200px]">
+                              {tx.user_email}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <p className={`font-bold text-lg ${
+                            tx.type === 'deposit' ? 'text-secondary' : 'text-primary'
+                          }`}>
+                            ${tx.amount}
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="emerald"
+                              size="sm"
+                              onClick={() => handleApproveTransaction(tx)}
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              Approve
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleRejectTransaction(tx)}
+                            >
+                              <XCircle className="w-4 h-4" />
+                              Reject
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
 
+          <div className="grid lg:grid-cols-2 gap-8">
             {/* Top Players */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
-              <Card glow="emerald">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-secondary" />
+              <Card className="border-secondary/20">
+                <CardHeader className="border-b border-border/50">
+                  <CardTitle className="flex items-center gap-2 text-secondary">
+                    <TrendingUp className="w-5 h-5" />
                     Top Players
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                   {topPlayers.length > 0 ? (
                     <div className="space-y-3">
-                      {topPlayers.map((user, index) => (
+                      {topPlayers.map((player, index) => (
                         <div 
-                          key={user.id}
-                          className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                          key={player.id}
+                          className="flex items-center justify-between p-3 bg-muted/30 rounded-xl"
                         >
                           <div className="flex items-center gap-3">
-                            <span className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
+                            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-sm font-bold text-primary border border-primary/30">
                               {index + 1}
                             </span>
-                            <span className="text-sm truncate max-w-[150px]">{user.email}</span>
+                            <span className="text-sm truncate max-w-[150px]">{player.email}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-primary">
-                              {formatCredits(user.balance)}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => resetUserBalance(user.id)}
-                              title="Reset balance to 10,000"
-                            >
-                              <RefreshCw className="w-4 h-4" />
-                            </Button>
-                          </div>
+                          <span className="font-semibold text-primary">
+                            ${formatCredits(player.balance)}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -194,58 +358,44 @@ const AdminPage = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="lg:col-span-2"
             >
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-accent" />
-                    Recent Bet History
+              <Card className="border-accent/20">
+                <CardHeader className="border-b border-border/50">
+                  <CardTitle className="flex items-center gap-2 text-accent">
+                    <BarChart3 className="w-5 h-5" />
+                    Recent Bets
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                   {betLogs.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-border">
-                            <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground">User</th>
-                            <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground">Game</th>
-                            <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Bet</th>
-                            <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground">Result</th>
-                            <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Payout</th>
-                            <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground">Time</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {betLogs.map((log) => (
-                            <tr key={log.id} className="border-b border-border/50 hover:bg-muted/50">
-                              <td className="py-3 px-2 text-sm truncate max-w-[120px]">{log.odamEmail}</td>
-                              <td className="py-3 px-2 text-sm capitalize">{log.game}</td>
-                              <td className="py-3 px-2 text-sm text-right">{formatCredits(log.betAmount)}</td>
-                              <td className="py-3 px-2 text-center">
-                                <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                                  log.won 
-                                    ? 'bg-secondary/20 text-secondary' 
-                                    : 'bg-destructive/20 text-destructive'
-                                }`}>
-                                  {log.won ? 'WIN' : 'LOSS'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2 text-sm text-right text-secondary">
-                                +{formatCredits(log.payout)}
-                              </td>
-                              <td className="py-3 px-2 text-sm text-right text-muted-foreground">
-                                {new Date(log.timestamp).toLocaleTimeString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {betLogs.slice(0, 10).map((log) => (
+                        <div 
+                          key={log.id}
+                          className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              log.won 
+                                ? 'bg-secondary/20 text-secondary' 
+                                : 'bg-destructive/20 text-destructive'
+                            }`}>
+                              {log.won ? 'WIN' : 'LOSS'}
+                            </span>
+                            <span className="capitalize text-muted-foreground">{log.game}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-medium">${log.bet_amount}</span>
+                            {log.won && (
+                              <span className="text-secondary ml-2">+${log.payout}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <p className="text-center text-muted-foreground py-8">
-                      No bets placed yet
+                      No bets yet
                     </p>
                   )}
                 </CardContent>
@@ -254,8 +404,6 @@ const AdminPage = () => {
           </div>
         </div>
       </main>
-
-      <Disclaimer />
     </div>
   );
 };

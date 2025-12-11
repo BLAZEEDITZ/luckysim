@@ -9,10 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Header } from "@/components/layout/Header";
-import { Disclaimer } from "@/components/layout/Disclaimer";
 import { formatCredits } from "@/lib/gameUtils";
 import { toast } from "sonner";
-import { Wallet, ArrowDownToLine, ArrowUpFromLine, Clock, CheckCircle, XCircle, CreditCard, Building } from "lucide-react";
+import { Wallet, ArrowDownToLine, ArrowUpFromLine, Clock, CheckCircle, XCircle, Send } from "lucide-react";
 
 interface Transaction {
   id: string;
@@ -23,7 +22,7 @@ interface Transaction {
 }
 
 const WalletPage = () => {
-  const { profile, user, loading, refreshProfile } = useAuth();
+  const { profile, user, loading } = useAuth();
   const navigate = useNavigate();
   const [depositAmount, setDepositAmount] = useState(10);
   const [withdrawAmount, setWithdrawAmount] = useState(100);
@@ -54,41 +53,34 @@ const WalletPage = () => {
     }
   };
 
-  const handleDeposit = async () => {
+  const handleDepositRequest = async () => {
     if (depositAmount < 10) {
-      toast.error("Minimum deposit is $10");
+      toast.error("Minimum deposit request is $10");
       return;
     }
 
     setProcessing(true);
 
-    // Simulate payment processing
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    // Create transaction record
-    await supabase.from('transactions').insert({
+    // Create pending deposit request (admin must approve)
+    const { error } = await supabase.from('transactions').insert({
       user_id: user?.id,
       type: 'deposit',
       amount: depositAmount,
-      status: 'completed'
-    });
-
-    // Update balance
-    const { data, error } = await supabase.rpc('update_balance', {
-      _user_id: user?.id,
-      _amount: depositAmount
+      status: 'pending'
     });
 
     if (!error) {
-      toast.success(`Successfully deposited $${depositAmount}!`);
-      await refreshProfile();
+      toast.success("Deposit request submitted! Waiting for admin approval.");
       await fetchTransactions();
+      setDepositAmount(10);
+    } else {
+      toast.error("Failed to submit request");
     }
 
     setProcessing(false);
   };
 
-  const handleWithdraw = async () => {
+  const handleWithdrawRequest = async () => {
     if (withdrawAmount < 100) {
       toast.error("Minimum withdrawal is $100");
       return;
@@ -101,23 +93,22 @@ const WalletPage = () => {
 
     setProcessing(true);
 
-    // Create pending transaction
-    await supabase.from('transactions').insert({
+    // Create pending withdrawal request (admin must approve)
+    const { error } = await supabase.from('transactions').insert({
       user_id: user?.id,
       type: 'withdrawal',
       amount: withdrawAmount,
       status: 'pending'
     });
 
-    // Deduct balance immediately
-    await supabase.rpc('update_balance', {
-      _user_id: user?.id,
-      _amount: -withdrawAmount
-    });
+    if (!error) {
+      toast.success("Withdrawal request submitted! Waiting for admin approval.");
+      await fetchTransactions();
+      setWithdrawAmount(100);
+    } else {
+      toast.error("Failed to submit request");
+    }
 
-    toast.success("Withdrawal request submitted! Processing in 1-3 business days.");
-    await refreshProfile();
-    await fetchTransactions();
     setProcessing(false);
   };
 
@@ -137,11 +128,14 @@ const WalletPage = () => {
 
   if (!user) return null;
 
+  const pendingDeposits = transactions.filter(t => t.type === 'deposit' && t.status === 'pending');
+  const pendingWithdrawals = transactions.filter(t => t.type === 'withdrawal' && t.status === 'pending');
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pt-24 pb-20 px-4">
+      <main className="pt-24 pb-12 px-4">
         <div className="container mx-auto max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -151,7 +145,7 @@ const WalletPage = () => {
             <h1 className="text-4xl font-display font-bold mb-4">
               <span className="text-gradient-gold">Wallet</span>
             </h1>
-            <div className="inline-flex items-center gap-4 px-8 py-4 bg-card rounded-xl border border-border glow-gold">
+            <div className="inline-flex items-center gap-4 px-8 py-4 bg-gradient-to-r from-card to-card/80 rounded-2xl border border-primary/30 shadow-lg">
               <Wallet className="w-8 h-8 text-primary" />
               <div className="text-left">
                 <p className="text-sm text-muted-foreground">Current Balance</p>
@@ -162,27 +156,41 @@ const WalletPage = () => {
             </div>
           </motion.div>
 
+          {/* Pending Requests Summary */}
+          {(pendingDeposits.length > 0 || pendingWithdrawals.length > 0) && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl"
+            >
+              <p className="text-amber-400 text-sm font-medium flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                You have {pendingDeposits.length + pendingWithdrawals.length} pending request(s) awaiting admin approval
+              </p>
+            </motion.div>
+          )}
+
           <Tabs defaultValue="deposit" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="deposit" className="gap-2">
+            <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50">
+              <TabsTrigger value="deposit" className="gap-2 data-[state=active]:bg-secondary/20">
                 <ArrowDownToLine className="w-4 h-4" />
-                Deposit
+                Request Deposit
               </TabsTrigger>
-              <TabsTrigger value="withdraw" className="gap-2">
+              <TabsTrigger value="withdraw" className="gap-2 data-[state=active]:bg-primary/20">
                 <ArrowUpFromLine className="w-4 h-4" />
-                Withdraw
+                Request Withdraw
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="deposit">
-              <Card glow="emerald">
-                <CardHeader>
-                  <CardTitle className="font-display">Deposit Funds</CardTitle>
+              <Card className="border-secondary/20 bg-gradient-to-b from-card to-background">
+                <CardHeader className="border-b border-border/50">
+                  <CardTitle className="font-display text-secondary">Request Deposit</CardTitle>
                   <CardDescription>
-                    Add funds to your account (Simulated - No real money)
+                    Submit a deposit request. Admin will review and approve your request.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="space-y-6 pt-6">
                   <div className="space-y-2">
                     <Label>Amount (Minimum $10)</Label>
                     <Input
@@ -190,6 +198,7 @@ const WalletPage = () => {
                       min={10}
                       value={depositAmount}
                       onChange={(e) => setDepositAmount(Number(e.target.value))}
+                      className="bg-muted/50"
                     />
                     <div className="flex gap-2">
                       {[10, 25, 50, 100, 250].map((amount) => (
@@ -206,43 +215,37 @@ const WalletPage = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <Button variant="outline" className="h-20 flex-col gap-2">
-                      <CreditCard className="w-6 h-6" />
-                      <span>Card</span>
-                    </Button>
-                    <Button variant="outline" className="h-20 flex-col gap-2">
-                      <Building className="w-6 h-6" />
-                      <span>Bank</span>
-                    </Button>
-                  </div>
-
                   <Button 
                     variant="emerald" 
                     size="lg" 
                     className="w-full"
-                    onClick={handleDeposit}
+                    onClick={handleDepositRequest}
                     disabled={processing || depositAmount < 10}
                   >
-                    {processing ? 'Processing...' : `Deposit $${depositAmount}`}
+                    {processing ? 'Submitting...' : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        Request ${depositAmount} Deposit
+                      </>
+                    )}
                   </Button>
 
                   <p className="text-xs text-muted-foreground text-center">
-                    ⚠️ This is a simulation. No real money will be charged.
+                    ⚠️ This is a simulation. Admin approval required.
                   </p>
                 </CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="withdraw">
-              <Card glow="gold">
-                <CardHeader>
-                  <CardTitle className="font-display">Withdraw Funds</CardTitle>
+              <Card className="border-primary/20 bg-gradient-to-b from-card to-background">
+                <CardHeader className="border-b border-border/50">
+                  <CardTitle className="font-display text-primary">Request Withdrawal</CardTitle>
                   <CardDescription>
-                    Request a withdrawal (Simulated - Processing time: 1-3 days)
+                    Submit a withdrawal request. Admin will review and process your request.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="space-y-6 pt-6">
                   <div className="space-y-2">
                     <Label>Amount (Minimum $100)</Label>
                     <Input
@@ -251,6 +254,7 @@ const WalletPage = () => {
                       max={profile?.balance ?? 0}
                       value={withdrawAmount}
                       onChange={(e) => setWithdrawAmount(Number(e.target.value))}
+                      className="bg-muted/50"
                     />
                     <div className="flex gap-2">
                       {[100, 250, 500].map((amount) => (
@@ -280,14 +284,19 @@ const WalletPage = () => {
                     variant="gold" 
                     size="lg" 
                     className="w-full"
-                    onClick={handleWithdraw}
+                    onClick={handleWithdrawRequest}
                     disabled={processing || withdrawAmount < 100 || (profile?.balance ?? 0) < withdrawAmount}
                   >
-                    {processing ? 'Processing...' : `Withdraw $${withdrawAmount}`}
+                    {processing ? 'Submitting...' : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        Request ${withdrawAmount} Withdrawal
+                      </>
+                    )}
                   </Button>
 
                   <p className="text-xs text-muted-foreground text-center">
-                    ⚠️ This is a simulation. No real money will be transferred.
+                    ⚠️ This is a simulation. Admin approval required.
                   </p>
                 </CardContent>
               </Card>
@@ -295,14 +304,14 @@ const WalletPage = () => {
           </Tabs>
 
           {/* Transaction History */}
-          <Card className="mt-8">
-            <CardHeader>
+          <Card className="mt-8 border-border/50">
+            <CardHeader className="border-b border-border/50">
               <CardTitle className="font-display flex items-center gap-2">
                 <Clock className="w-5 h-5" />
                 Transaction History
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               {transactions.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
                   No transactions yet
@@ -312,16 +321,20 @@ const WalletPage = () => {
                   {transactions.map((tx) => (
                     <div
                       key={tx.id}
-                      className="flex items-center justify-between p-4 bg-muted/30 rounded-lg"
+                      className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/30"
                     >
                       <div className="flex items-center gap-3">
                         {tx.type === 'deposit' ? (
-                          <ArrowDownToLine className="w-5 h-5 text-secondary" />
+                          <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
+                            <ArrowDownToLine className="w-5 h-5 text-secondary" />
+                          </div>
                         ) : (
-                          <ArrowUpFromLine className="w-5 h-5 text-primary" />
+                          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                            <ArrowUpFromLine className="w-5 h-5 text-primary" />
+                          </div>
                         )}
                         <div>
-                          <p className="font-medium capitalize">{tx.type}</p>
+                          <p className="font-medium capitalize">{tx.type} Request</p>
                           <p className="text-sm text-muted-foreground">
                             {new Date(tx.created_at).toLocaleDateString()}
                           </p>
@@ -337,13 +350,13 @@ const WalletPage = () => {
                           {tx.status === 'completed' && (
                             <>
                               <CheckCircle className="w-3 h-3 text-secondary" />
-                              <span className="text-secondary">Completed</span>
+                              <span className="text-secondary">Approved</span>
                             </>
                           )}
                           {tx.status === 'pending' && (
                             <>
-                              <Clock className="w-3 h-3 text-primary" />
-                              <span className="text-primary">Pending</span>
+                              <Clock className="w-3 h-3 text-amber-400" />
+                              <span className="text-amber-400">Pending</span>
                             </>
                           )}
                           {tx.status === 'rejected' && (
@@ -362,8 +375,6 @@ const WalletPage = () => {
           </Card>
         </div>
       </main>
-
-      <Disclaimer />
     </div>
   );
 };
