@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { z } from "zod";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Header } from "@/components/layout/Header";
 import { Disclaimer } from "@/components/layout/Disclaimer";
 import { toast } from "sonner";
-import { Mail, Lock, ArrowRight, Coins } from "lucide-react";
+import { Mail, Lock, ArrowRight, Gift } from "lucide-react";
 
 const emailSchema = z.string().email("Please enter a valid email");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
@@ -25,8 +25,14 @@ const AuthPage = () => {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
 
-  const { login, register } = useGameStore();
+  const { signIn, signUp, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/games');
+    }
+  }, [user, authLoading, navigate]);
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -58,22 +64,37 @@ const AuthPage = () => {
     
     setLoading(true);
     
-    // Simulate async operation
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
     const result = mode === 'login' 
-      ? login(email, password)
-      : register(email, password);
+      ? await signIn(email, password)
+      : await signUp(email, password);
     
     setLoading(false);
     
-    if (result.success) {
-      toast.success(result.message);
-      navigate('/games');
+    if (result.error) {
+      toast.error(result.error.message || "Authentication failed");
     } else {
-      toast.error(result.message);
+      if (mode === 'register') {
+        toast.success("Welcome! You've received $10 free credits!");
+      } else {
+        toast.success("Welcome back!");
+      }
+      navigate('/games');
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1 }}
+          className="text-4xl"
+        >
+          🎰
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -89,11 +110,11 @@ const AuthPage = () => {
             <Card glow="gold" className="overflow-hidden">
               <CardHeader className="text-center bg-gradient-to-b from-primary/10 to-transparent pb-8">
                 <motion.div
-                  animate={{ rotate: [0, 10, -10, 0] }}
+                  className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-primary/60 rounded-2xl flex items-center justify-center shadow-lg mb-4"
+                  animate={{ rotate: [0, 5, -5, 0] }}
                   transition={{ repeat: Infinity, duration: 3 }}
-                  className="text-5xl mb-4"
                 >
-                  🎰
+                  <span className="text-3xl font-bold text-primary-foreground">L</span>
                 </motion.div>
                 <CardTitle className="text-2xl font-display text-gradient-gold">
                   {mode === 'login' ? 'Welcome Back!' : 'Join LuckySim'}
@@ -101,7 +122,7 @@ const AuthPage = () => {
                 <CardDescription>
                   {mode === 'login' 
                     ? 'Sign in to continue playing' 
-                    : 'Create an account to start with 10,000 free credits!'}
+                    : 'Create an account to start with $10 free!'}
                 </CardDescription>
               </CardHeader>
               
@@ -167,9 +188,9 @@ const AuthPage = () => {
 
                 {mode === 'register' && (
                   <div className="flex items-center justify-center gap-2 p-3 bg-secondary/20 rounded-lg border border-secondary/30">
-                    <Coins className="w-5 h-5 text-secondary" />
+                    <Gift className="w-5 h-5 text-secondary" />
                     <span className="text-sm font-medium text-secondary">
-                      Get 10,000 free credits on signup!
+                      Get $10 FREE on signup!
                     </span>
                   </div>
                 )}
@@ -184,12 +205,6 @@ const AuthPage = () => {
                       ? "Don't have an account? Sign up" 
                       : 'Already have an account? Sign in'}
                   </button>
-                </div>
-
-                <div className="text-center pt-2">
-                  <p className="text-xs text-muted-foreground">
-                    Demo Admin: admin@luckysim.com / SecurePass123!
-                  </p>
                 </div>
               </CardContent>
             </Card>
