@@ -116,7 +116,7 @@ export const PlinkoGame = () => {
   return (
     <div className="grid lg:grid-cols-3 gap-6">
       {/* Game Board */}
-      <Card className="lg:col-span-2" glow="royal">
+      <Card className="lg:col-span-2" glow="purple">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-gradient-gold font-display">
             <Circle className="w-6 h-6" />
@@ -162,9 +162,7 @@ export const PlinkoGame = () => {
                   key={i}
                   className={`
                     flex-1 py-2 text-center text-xs font-bold rounded-t-lg
-                  ${mult >= 3 ? 'bg-secondary text-secondary-foreground' : ''}
-                    ${mult >= 1 && mult < 3 ? 'bg-primary/80 text-primary-foreground' : ''}
-                    ${mult < 1 ? 'bg-destructive/80 text-destructive-foreground' : ''}`}
+                    ${mult >= 3 ? 'bg-secondary text-secondary-foreground' : ''}
                     ${mult >= 1 && mult < 3 ? 'bg-primary/80 text-primary-foreground' : ''}
                     ${mult < 1 ? 'bg-destructive/80 text-destructive-foreground' : ''}
                   `}
