@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -13,6 +14,7 @@ import {
   Card as CardType
 } from "@/lib/gameUtils";
 import { Coins, Minus, Plus, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 
 interface BlackjackGameProps {
   gameConfig: {
@@ -55,7 +57,7 @@ const PlayingCard = ({ card, hidden = false }: { card: CardType; hidden?: boolea
 };
 
 export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
-  const { currentUser, updateBalance, placeBet } = useGameStore();
+  const { profile, user, updateBalance } = useAuth();
   const [bet, setBet] = useState(gameConfig.minBet);
   const [deck, setDeck] = useState<CardType[]>([]);
   const [playerHand, setPlayerHand] = useState<CardType[]>([]);
@@ -64,8 +66,19 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
   const [result, setResult] = useState<{ won: boolean; amount: number; message: string } | null>(null);
   const [shake, setShake] = useState(false);
 
-  const startGame = useCallback(() => {
-    if (!currentUser || bet > currentUser.balance) return;
+  const logBet = async (won: boolean, payout: number) => {
+    if (!user) return;
+    await supabase.from('bet_logs').insert({
+      user_id: user.id,
+      game: 'blackjack',
+      bet_amount: bet,
+      won,
+      payout
+    });
+  };
+
+  const startGame = useCallback(async () => {
+    if (!user || !profile || bet > profile.balance) return;
 
     const newDeck = createDeck();
     const pHand = [newDeck.pop()!, newDeck.pop()!];
@@ -76,10 +89,30 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setDealerHand(dHand);
     setPhase('playing');
     setResult(null);
-    updateBalance(-bet);
-  }, [bet, currentUser, updateBalance]);
+    await updateBalance(-bet);
+  }, [bet, user, profile, updateBalance]);
 
-  const hit = useCallback(() => {
+  const endGame = async (won: boolean, message: string, push: boolean = false) => {
+    const payout = push ? bet : (won ? Math.floor(bet * gameConfig.payoutMultiplier) : 0);
+    
+    if (won) {
+      triggerWinConfetti();
+      await updateBalance(payout);
+      toast.success(`You won $${formatCredits(payout)}!`);
+    } else if (push) {
+      await updateBalance(bet);
+      toast.info("Push! Bet returned.");
+    } else {
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+    }
+    
+    await logBet(won, payout);
+    setResult({ won, amount: payout, message });
+    setPhase('finished');
+  };
+
+  const hit = useCallback(async () => {
     if (phase !== 'playing' || deck.length === 0) return;
 
     const newDeck = [...deck];
@@ -91,17 +124,16 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
 
     const handValue = calculateHandValue(newHand);
     if (handValue > 21) {
-      // Bust!
-      endGame(false, 'Bust! You went over 21.');
+      await endGame(false, 'Bust! You went over 21.');
     }
   }, [phase, deck, playerHand]);
 
-  const stand = useCallback(() => {
+  const stand = useCallback(async () => {
     if (phase !== 'playing') return;
     setPhase('dealer');
     
     // Dealer plays with controlled probability
-    setTimeout(() => {
+    setTimeout(async () => {
       const shouldWin = checkWin(gameConfig.winProbability);
       const playerValue = calculateHandValue(playerHand);
       
@@ -136,34 +168,16 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
       const finalPlayerValue = calculateHandValue(playerHand);
       
       if (finalDealerValue > 21) {
-        endGame(true, 'Dealer busts! You win!');
+        await endGame(true, 'Dealer busts! You win!');
       } else if (finalPlayerValue > finalDealerValue) {
-        endGame(true, `You win with ${finalPlayerValue}!`);
+        await endGame(true, `You win with ${finalPlayerValue}!`);
       } else if (finalPlayerValue === finalDealerValue) {
-        endGame(false, `Push! It's a tie at ${finalPlayerValue}.`, true);
+        await endGame(false, `Push! It's a tie at ${finalPlayerValue}.`, true);
       } else {
-        endGame(false, `Dealer wins with ${finalDealerValue}.`);
+        await endGame(false, `Dealer wins with ${finalDealerValue}.`);
       }
     }, 1000);
   }, [phase, playerHand, dealerHand, deck, gameConfig.winProbability]);
-
-  const endGame = (won: boolean, message: string, push: boolean = false) => {
-    const payout = push ? bet : (won ? Math.floor(bet * gameConfig.payoutMultiplier) : 0);
-    
-    if (won) {
-      triggerWinConfetti();
-      updateBalance(payout);
-    } else if (push) {
-      updateBalance(bet); // Return bet on push
-    } else {
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
-    }
-    
-    placeBet('blackjack', bet, won, payout);
-    setResult({ won, amount: payout, message });
-    setPhase('finished');
-  };
 
   const newRound = () => {
     setPlayerHand([]);
@@ -178,19 +192,20 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setBet(newBet);
   };
 
+  const balance = profile?.balance ?? 0;
   const playerValue = calculateHandValue(playerHand);
   const dealerValue = phase === 'finished' ? calculateHandValue(dealerHand) : calculateHandValue([dealerHand[0]].filter(Boolean));
 
   return (
-    <Card glow="purple" className="w-full max-w-2xl mx-auto overflow-hidden">
-      <CardHeader className="text-center bg-gradient-to-b from-accent/20 to-transparent">
-        <CardTitle className="text-accent text-3xl">21 Blackjack</CardTitle>
+    <Card className="w-full max-w-2xl mx-auto overflow-hidden border-accent/20 bg-gradient-to-b from-card to-background">
+      <CardHeader className="text-center bg-gradient-to-b from-accent/10 to-transparent border-b border-accent/10">
+        <CardTitle className="text-accent text-3xl font-display">21 Blackjack</CardTitle>
         <p className="text-muted-foreground">Get closer to 21 than the dealer!</p>
       </CardHeader>
       
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-6 p-6">
         {/* Game Table */}
-        <div className={`bg-gradient-to-b from-emerald-900 to-emerald-950 rounded-xl p-6 space-y-6 border-4 border-emerald-700 ${shake ? 'animate-shake' : ''}`}>
+        <div className={`bg-gradient-to-b from-emerald-900 to-emerald-950 rounded-2xl p-6 space-y-6 border-4 border-emerald-700 ${shake ? 'animate-shake' : ''}`}>
           {/* Dealer's Hand */}
           <div className="text-center space-y-2">
             <p className="text-emerald-300 font-semibold">
@@ -236,7 +251,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className={`text-center p-4 rounded-lg ${
+              className={`text-center p-4 rounded-xl ${
                 result.won 
                   ? 'bg-secondary/20 border border-secondary text-secondary' 
                   : 'bg-destructive/20 border border-destructive text-destructive'
@@ -244,7 +259,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
             >
               <p className="text-lg font-bold">
                 {result.won 
-                  ? `🎉 ${result.message} +${formatCredits(result.amount)} credits!` 
+                  ? `🎉 ${result.message} +$${formatCredits(result.amount)}!` 
                   : `😔 ${result.message}`}
               </p>
             </motion.div>
@@ -261,13 +276,14 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
                   size="icon"
                   onClick={() => adjustBet(-20)}
                   disabled={bet <= gameConfig.minBet}
+                  className="rounded-full"
                 >
                   <Minus className="w-4 h-4" />
                 </Button>
                 
-                <div className="flex items-center gap-2 px-4 py-2 bg-muted rounded-lg min-w-[120px] justify-center">
-                  <Coins className="w-5 h-5 text-primary" />
-                  <span className="text-xl font-bold text-primary">{formatCredits(bet)}</span>
+                <div className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-accent/20 to-accent/10 rounded-xl min-w-[140px] justify-center border border-accent/30">
+                  <Coins className="w-5 h-5 text-accent" />
+                  <span className="text-xl font-bold text-accent">${formatCredits(bet)}</span>
                 </div>
                 
                 <Button
@@ -275,6 +291,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
                   size="icon"
                   onClick={() => adjustBet(20)}
                   disabled={bet >= gameConfig.maxBet}
+                  className="rounded-full"
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
@@ -283,9 +300,9 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
               <Button
                 variant="royal"
                 size="xl"
-                className="w-full"
+                className="w-full text-lg font-bold"
                 onClick={startGame}
-                disabled={!currentUser || bet > currentUser.balance}
+                disabled={!user || bet > balance}
               >
                 <span className="text-2xl">🃏</span>
                 DEAL CARDS
@@ -331,7 +348,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
             <Button
               variant="gold"
               size="xl"
-              className="w-full"
+              className="w-full text-lg font-bold"
               onClick={newRound}
             >
               <RotateCcw className="w-5 h-5" />

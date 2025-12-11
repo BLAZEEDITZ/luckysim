@@ -16,7 +16,7 @@ export const Header = () => {
     <motion.header
       initial={{ y: -100 }}
       animate={{ y: 0 }}
-      className="fixed top-0 left-0 right-0 z-50 glass border-b border-border/50"
+      className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50"
     >
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 group">
@@ -25,8 +25,8 @@ export const Header = () => {
             transition={{ duration: 0.5 }}
             className="relative"
           >
-            <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/60 rounded-lg flex items-center justify-center shadow-lg">
-              <span className="text-xl font-bold text-primary-foreground">L</span>
+            <div className="w-10 h-10 bg-gradient-to-br from-primary via-primary/80 to-amber-600 rounded-xl flex items-center justify-center shadow-lg border border-primary/30">
+              <span className="text-xl font-bold text-primary-foreground font-display">L</span>
             </div>
           </motion.div>
           <span className="font-display text-xl font-bold text-gradient-gold">
@@ -34,13 +34,13 @@ export const Header = () => {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-2 sm:gap-4">
+        <nav className="flex items-center gap-1 sm:gap-2">
           {user ? (
             <>
               <Link to="/">
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" className="hidden sm:flex">
                   <Home className="w-4 h-4" />
-                  <span className="hidden sm:inline ml-1">Home</span>
+                  <span className="ml-1">Home</span>
                 </Button>
               </Link>
 
@@ -60,7 +60,7 @@ export const Header = () => {
 
               {isAdmin && (
                 <Link to="/admin">
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" className="text-primary">
                     <Shield className="w-4 h-4" />
                     <span className="hidden sm:inline ml-1">Admin</span>
                   </Button>
@@ -68,9 +68,9 @@ export const Header = () => {
               )}
 
               <Link to="/wallet">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer">
+                <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary/20 to-primary/10 rounded-xl hover:from-primary/30 hover:to-primary/20 transition-colors cursor-pointer border border-primary/30">
                   <Coins className="w-4 h-4 text-primary" />
-                  <span className="font-semibold text-primary">
+                  <span className="font-bold text-primary">
                     ${formatCredits(profile?.balance ?? 0)}
                   </span>
                 </div>
@@ -81,6 +81,7 @@ export const Header = () => {
                 size="icon"
                 onClick={toggleSound}
                 title={soundEnabled ? "Mute sounds" : "Enable sounds"}
+                className="hidden sm:flex"
               >
                 {soundEnabled ? (
                   <Volume2 className="w-5 h-5" />
@@ -95,7 +96,7 @@ export const Header = () => {
             </>
           ) : (
             <Link to="/auth">
-              <Button variant="gold">Sign In</Button>
+              <Button variant="gold" className="font-bold">Sign In</Button>
             </Link>
           )}
         </nav>
