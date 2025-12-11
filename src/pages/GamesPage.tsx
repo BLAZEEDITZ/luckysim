@@ -1,26 +1,40 @@
 import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Disclaimer } from "@/components/layout/Disclaimer";
-import { Coins, Lock } from "lucide-react";
+import { Coins, Wallet } from "lucide-react";
 import { formatCredits } from "@/lib/gameUtils";
 
 const GamesPage = () => {
-  const { currentUser, games } = useGameStore();
+  const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!currentUser) {
+    if (!loading && !user) {
       navigate('/auth');
     }
-  }, [currentUser, navigate]);
+  }, [loading, user, navigate]);
 
-  if (!currentUser) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1 }}
+          className="text-4xl"
+        >
+          🎰
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   const gamesList = [
     { 
@@ -29,7 +43,9 @@ const GamesPage = () => {
       name: 'Lucky Spin Slots', 
       description: 'Spin the reels and match 3 symbols to win big!',
       color: 'gold' as const,
-      gradient: 'from-amber-600 to-yellow-500'
+      gradient: 'from-amber-600 to-yellow-500',
+      minBet: 1,
+      maxBet: 100
     },
     { 
       id: 'roulette', 
@@ -37,7 +53,9 @@ const GamesPage = () => {
       name: 'Classic Roulette', 
       description: 'Place your bets on red, black, or your lucky number!',
       color: 'emerald' as const,
-      gradient: 'from-emerald-600 to-teal-500'
+      gradient: 'from-emerald-600 to-teal-500',
+      minBet: 1,
+      maxBet: 50
     },
     { 
       id: 'blackjack', 
@@ -45,7 +63,29 @@ const GamesPage = () => {
       name: '21 Blackjack', 
       description: 'Get as close to 21 as you can without going bust!',
       color: 'purple' as const,
-      gradient: 'from-purple-600 to-pink-500'
+      gradient: 'from-purple-600 to-pink-500',
+      minBet: 2,
+      maxBet: 200
+    },
+    { 
+      id: 'mines', 
+      icon: '💎', 
+      name: 'Mines', 
+      description: 'Find the diamonds and avoid the mines! Cash out anytime.',
+      color: 'emerald' as const,
+      gradient: 'from-emerald-500 to-cyan-500',
+      minBet: 1,
+      maxBet: 100
+    },
+    { 
+      id: 'plinko', 
+      icon: '⚪', 
+      name: 'Plinko', 
+      description: 'Drop the ball and watch it bounce to your fortune!',
+      color: 'purple' as const,
+      gradient: 'from-violet-600 to-fuchsia-500',
+      minBet: 1,
+      maxBet: 100
     },
   ];
 
@@ -67,82 +107,72 @@ const GamesPage = () => {
             <p className="text-muted-foreground text-lg mb-6">
               Select a game to start playing with your virtual credits
             </p>
-            <div className="inline-flex items-center gap-3 px-6 py-3 bg-card rounded-full border border-border glow-gold">
-              <Coins className="w-6 h-6 text-primary" />
-              <span className="text-lg font-semibold">
-                Balance: <span className="text-primary">{formatCredits(currentUser.balance)} Credits</span>
-              </span>
+            <div className="flex items-center justify-center gap-4 flex-wrap">
+              <Link to="/wallet">
+                <div className="inline-flex items-center gap-3 px-6 py-3 bg-card rounded-full border border-border glow-gold hover:border-primary transition-colors cursor-pointer">
+                  <Coins className="w-6 h-6 text-primary" />
+                  <span className="text-lg font-semibold">
+                    Balance: <span className="text-primary">${formatCredits(profile?.balance ?? 0)}</span>
+                  </span>
+                </div>
+              </Link>
+              <Link to="/wallet">
+                <Button variant="outline" size="lg">
+                  <Wallet className="w-5 h-5 mr-2" />
+                  Deposit / Withdraw
+                </Button>
+              </Link>
             </div>
           </motion.div>
 
           {/* Games Grid */}
-          <div className="grid md:grid-cols-3 gap-8">
-            {gamesList.map((game, index) => {
-              const config = games.find(g => g.id === game.id);
-              const isEnabled = config?.enabled ?? true;
-
-              return (
-                <motion.div
-                  key={game.id}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.15 }}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {gamesList.map((game, index) => (
+              <motion.div
+                key={game.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <Card 
+                  glow={game.color} 
+                  className="h-full overflow-hidden card-shine group"
                 >
-                  <Card 
-                    glow={isEnabled ? game.color : 'none'} 
-                    className={`h-full overflow-hidden card-shine group ${!isEnabled ? 'opacity-60' : ''}`}
-                  >
-                    <div className={`h-40 bg-gradient-to-br ${game.gradient} flex items-center justify-center relative overflow-hidden`}>
-                      <motion.span 
-                        className="text-7xl relative z-10"
-                        whileHover={{ scale: 1.2, rotate: 10 }}
-                        transition={{ type: "spring", stiffness: 300 }}
-                      >
-                        {game.icon}
-                      </motion.span>
-                      {!isEnabled && (
-                        <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
-                          <Lock className="w-12 h-12 text-muted-foreground" />
-                        </div>
-                      )}
+                  <div className={`h-40 bg-gradient-to-br ${game.gradient} flex items-center justify-center relative overflow-hidden`}>
+                    <motion.span 
+                      className="text-7xl relative z-10"
+                      whileHover={{ scale: 1.2, rotate: 10 }}
+                      transition={{ type: "spring", stiffness: 300 }}
+                    >
+                      {game.icon}
+                    </motion.span>
+                  </div>
+                  <CardContent className="p-6 space-y-4">
+                    <h3 className="text-2xl font-display font-semibold">{game.name}</h3>
+                    <p className="text-muted-foreground">{game.description}</p>
+                    
+                    <div className="flex justify-between text-sm text-muted-foreground border-t border-border pt-4">
+                      <span>Min: ${game.minBet}</span>
+                      <span>Max: ${game.maxBet}</span>
                     </div>
-                    <CardContent className="p-6 space-y-4">
-                      <h3 className="text-2xl font-display font-semibold">{game.name}</h3>
-                      <p className="text-muted-foreground">{game.description}</p>
-                      
-                      {config && (
-                        <div className="flex justify-between text-sm text-muted-foreground border-t border-border pt-4">
-                          <span>Min: {config.minBet}</span>
-                          <span>Max: {formatCredits(config.maxBet)}</span>
-                          <span>Win: 2.5x</span>
-                        </div>
-                      )}
-                      
-                      {isEnabled ? (
-                        <Link to={`/games/${game.id}`}>
-                          <Button 
-                            variant={game.color === 'purple' ? 'royal' : game.color} 
-                            size="lg"
-                            className="w-full mt-2"
-                          >
-                            Play {game.name.split(' ')[0]}
-                          </Button>
-                        </Link>
-                      ) : (
-                        <Button variant="ghost" disabled className="w-full mt-2">
-                          <Lock className="w-4 h-4 mr-2" />
-                          Disabled by Admin
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              );
-            })}
+                    
+                    <Link to={`/games/${game.id}`}>
+                      <Button 
+                        variant={game.color === 'purple' ? 'royal' : game.color} 
+                        size="lg"
+                        className="w-full mt-2"
+                      >
+                        Play {game.name.split(' ')[0]}
+                      </Button>
+                    </Link>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
           </div>
 
           {/* Low Balance Warning */}
-          {currentUser.balance < 100 && (
+          {profile && profile.balance < 10 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -151,9 +181,12 @@ const GamesPage = () => {
               <p className="text-destructive font-semibold mb-2">
                 ⚠️ Running low on credits!
               </p>
-              <p className="text-muted-foreground text-sm">
-                This is a simulation - credits are for entertainment only.
-              </p>
+              <Link to="/wallet">
+                <Button variant="outline" className="mt-2">
+                  <Wallet className="w-4 h-4 mr-2" />
+                  Add Funds
+                </Button>
+              </Link>
             </motion.div>
           )}
         </div>

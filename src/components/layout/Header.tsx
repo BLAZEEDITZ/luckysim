@@ -1,12 +1,16 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { useGameStore } from "@/store/gameStore";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { formatCredits } from "@/lib/gameUtils";
-import { Coins, Volume2, VolumeX, LogOut, Shield, Home } from "lucide-react";
+import { Coins, Volume2, VolumeX, LogOut, Shield, Home, Wallet, Gamepad2 } from "lucide-react";
+import { useState } from "react";
 
 export const Header = () => {
-  const { currentUser, soundEnabled, toggleSound, logout } = useGameStore();
+  const { user, profile, isAdmin, signOut } = useAuth();
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  const toggleSound = () => setSoundEnabled(!soundEnabled);
 
   return (
     <motion.header
@@ -19,46 +23,58 @@ export const Header = () => {
           <motion.div
             whileHover={{ rotate: 360 }}
             transition={{ duration: 0.5 }}
-            className="text-3xl"
+            className="relative"
           >
-            🎰
+            <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/60 rounded-lg flex items-center justify-center shadow-lg">
+              <span className="text-xl font-bold text-primary-foreground">L</span>
+            </div>
           </motion.div>
           <span className="font-display text-xl font-bold text-gradient-gold">
             LuckySim
           </span>
         </Link>
 
-        <nav className="flex items-center gap-4">
-          {currentUser ? (
+        <nav className="flex items-center gap-2 sm:gap-4">
+          {user ? (
             <>
               <Link to="/">
                 <Button variant="ghost" size="sm">
                   <Home className="w-4 h-4" />
-                  <span className="hidden sm:inline">Home</span>
+                  <span className="hidden sm:inline ml-1">Home</span>
                 </Button>
               </Link>
 
               <Link to="/games">
                 <Button variant="ghost" size="sm">
-                  Games
+                  <Gamepad2 className="w-4 h-4" />
+                  <span className="hidden sm:inline ml-1">Games</span>
                 </Button>
               </Link>
 
-              {currentUser.isAdmin && (
+              <Link to="/wallet">
+                <Button variant="ghost" size="sm">
+                  <Wallet className="w-4 h-4" />
+                  <span className="hidden sm:inline ml-1">Wallet</span>
+                </Button>
+              </Link>
+
+              {isAdmin && (
                 <Link to="/admin">
                   <Button variant="ghost" size="sm">
                     <Shield className="w-4 h-4" />
-                    <span className="hidden sm:inline">Admin</span>
+                    <span className="hidden sm:inline ml-1">Admin</span>
                   </Button>
                 </Link>
               )}
 
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg">
-                <Coins className="w-4 h-4 text-primary" />
-                <span className="font-semibold text-primary">
-                  {formatCredits(currentUser.balance)}
-                </span>
-              </div>
+              <Link to="/wallet">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer">
+                  <Coins className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-primary">
+                    ${formatCredits(profile?.balance ?? 0)}
+                  </span>
+                </div>
+              </Link>
 
               <Button
                 variant="ghost"
@@ -73,7 +89,7 @@ export const Header = () => {
                 )}
               </Button>
 
-              <Button variant="ghost" size="icon" onClick={logout} title="Logout">
+              <Button variant="ghost" size="icon" onClick={signOut} title="Logout">
                 <LogOut className="w-5 h-5" />
               </Button>
             </>
