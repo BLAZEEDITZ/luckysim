@@ -1,16 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
-  checkWin, 
-  calculatePayout, 
   triggerWinConfetti, 
   formatCredits,
   getRandomSlotSymbol,
-  SLOT_SYMBOLS 
+  SLOT_SYMBOLS,
+  getWinProbability
 } from "@/lib/gameUtils";
 import { Coins, RotateCcw, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +45,9 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     const interval = 100;
     let elapsed = 0;
 
+    // Get win probability from settings
+    const winProb = await getWinProbability();
+
     const spinInterval = setInterval(async () => {
       setReels([
         getRandomSlotSymbol(),
@@ -57,9 +59,9 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
       if (elapsed >= spinDuration) {
         clearInterval(spinInterval);
         
-        // Determine win
-        const won = checkWin(gameConfig.winProbability);
-        const payout = calculatePayout(bet, won, gameConfig.payoutMultiplier);
+        // Determine win based on dynamic probability
+        const won = Math.random() < winProb;
+        const payout = won ? Math.floor(bet * gameConfig.payoutMultiplier) : 0;
 
         // Set final reels based on win
         if (won) {
@@ -67,7 +69,7 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
           setReels([winSymbol, winSymbol, winSymbol]);
           triggerWinConfetti();
           await updateBalance(payout);
-          toast.success(`You won $${formatCredits(payout)}!`);
+          toast.success(`You won NPR ${formatCredits(payout)}!`);
         } else {
           // Ensure not matching
           let finalReels = [getRandomSlotSymbol(), getRandomSlotSymbol(), getRandomSlotSymbol()];
@@ -103,22 +105,22 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
 
   return (
     <Card className="w-full max-w-lg mx-auto overflow-hidden border-primary/20 bg-gradient-to-b from-card to-background">
-      <CardHeader className="text-center bg-gradient-to-b from-primary/10 to-transparent border-b border-primary/10">
-        <CardTitle className="text-gradient-gold text-3xl font-display">Lucky Spin Slots</CardTitle>
-        <p className="text-muted-foreground">Match 3 symbols to win!</p>
+      <CardHeader className="text-center bg-gradient-to-b from-primary/10 to-transparent border-b border-primary/10 py-4 sm:py-6">
+        <CardTitle className="text-gradient-gold text-2xl sm:text-3xl font-display">Lucky Spin Slots</CardTitle>
+        <p className="text-muted-foreground text-sm sm:text-base">Match 3 symbols to win!</p>
       </CardHeader>
       
-      <CardContent className="space-y-6 p-6">
+      <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
         {/* Slot Reels */}
         <motion.div 
-          className={`flex justify-center gap-4 p-8 bg-gradient-to-b from-muted to-muted/50 rounded-2xl border border-border/50 ${shake ? 'animate-shake' : ''}`}
+          className={`flex justify-center gap-2 sm:gap-4 p-4 sm:p-8 bg-gradient-to-b from-muted to-muted/50 rounded-2xl border border-border/50 ${shake ? 'animate-shake' : ''}`}
           animate={spinning ? { scale: [1, 1.02, 1] } : {}}
           transition={{ repeat: spinning ? Infinity : 0, duration: 0.3 }}
         >
           {reels.map((symbol, index) => (
             <motion.div
               key={index}
-              className="w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center bg-gradient-to-b from-card to-background rounded-xl border-2 border-primary/30 text-5xl sm:text-6xl shadow-lg"
+              className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 flex items-center justify-center bg-gradient-to-b from-card to-background rounded-xl border-2 border-primary/30 text-4xl sm:text-5xl md:text-6xl shadow-lg"
               animate={spinning ? { y: [0, -10, 0] } : {}}
               transition={{ 
                 repeat: spinning ? Infinity : 0, 
@@ -138,15 +140,15 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className={`text-center p-4 rounded-xl ${
+              className={`text-center p-3 sm:p-4 rounded-xl ${
                 result.won 
                   ? 'bg-secondary/20 border border-secondary text-secondary' 
                   : 'bg-destructive/20 border border-destructive text-destructive'
               }`}
             >
-              <p className="text-lg font-bold">
+              <p className="text-base sm:text-lg font-bold">
                 {result.won 
-                  ? `🎉 You won $${formatCredits(result.amount)}!` 
+                  ? `🎉 You won NPR ${formatCredits(result.amount)}!` 
                   : '😔 Better luck next time!'}
               </p>
             </motion.div>
@@ -154,21 +156,21 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
         </AnimatePresence>
 
         {/* Bet Controls */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-center gap-4">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="flex items-center justify-center gap-2 sm:gap-4">
             <Button
               variant="outline"
               size="icon"
               onClick={() => adjustBet(-10)}
               disabled={bet <= gameConfig.minBet || spinning}
-              className="rounded-full"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
             >
               <Minus className="w-4 h-4" />
             </Button>
             
-            <div className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary/20 to-primary/10 rounded-xl min-w-[140px] justify-center border border-primary/30">
-              <Coins className="w-5 h-5 text-primary" />
-              <span className="text-xl font-bold text-primary">${formatCredits(bet)}</span>
+            <div className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-primary/20 to-primary/10 rounded-xl min-w-[120px] sm:min-w-[140px] justify-center border border-primary/30">
+              <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+              <span className="text-lg sm:text-xl font-bold text-primary">NPR {formatCredits(bet)}</span>
             </div>
             
             <Button
@@ -176,20 +178,20 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
               size="icon"
               onClick={() => adjustBet(10)}
               disabled={bet >= gameConfig.maxBet || spinning}
-              className="rounded-full"
+              className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
             >
               <Plus className="w-4 h-4" />
             </Button>
           </div>
 
-          <p className="text-center text-sm text-muted-foreground">
-            Min: ${gameConfig.minBet} | Max: ${formatCredits(gameConfig.maxBet)}
+          <p className="text-center text-xs sm:text-sm text-muted-foreground">
+            Min: NPR {gameConfig.minBet} | Max: NPR {formatCredits(gameConfig.maxBet)}
           </p>
 
           <Button
             variant="gold"
-            size="xl"
-            className="w-full text-lg font-bold"
+            size="lg"
+            className="w-full text-base sm:text-lg font-bold"
             onClick={spin}
             disabled={spinning || !user || bet > balance}
           >
@@ -200,7 +202,7 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
               </>
             ) : (
               <>
-                <span className="text-2xl">🎰</span>
+                <span className="text-xl sm:text-2xl">🎰</span>
                 SPIN
               </>
             )}

@@ -24,7 +24,7 @@ interface Transaction {
 const WalletPage = () => {
   const { profile, user, loading } = useAuth();
   const navigate = useNavigate();
-  const [depositAmount, setDepositAmount] = useState(10);
+  const [depositAmount, setDepositAmount] = useState(100);
   const [withdrawAmount, setWithdrawAmount] = useState(100);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -55,7 +55,7 @@ const WalletPage = () => {
 
   const handleDepositRequest = async () => {
     if (depositAmount < 10) {
-      toast.error("Minimum deposit request is $10");
+      toast.error("Minimum deposit request is NPR 10");
       return;
     }
 
@@ -72,7 +72,7 @@ const WalletPage = () => {
     if (!error) {
       toast.success("Deposit request submitted! Waiting for admin approval.");
       await fetchTransactions();
-      setDepositAmount(10);
+      setDepositAmount(100);
     } else {
       toast.error("Failed to submit request");
     }
@@ -82,7 +82,7 @@ const WalletPage = () => {
 
   const handleWithdrawRequest = async () => {
     if (withdrawAmount < 100) {
-      toast.error("Minimum withdrawal is $100");
+      toast.error("Minimum withdrawal is NPR 100");
       return;
     }
 
@@ -135,22 +135,22 @@ const WalletPage = () => {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pt-24 pb-12 px-4">
+      <main className="pt-20 sm:pt-24 pb-8 sm:pb-12 px-2 sm:px-4">
         <div className="container mx-auto max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-8"
+            className="text-center mb-6 sm:mb-8"
           >
-            <h1 className="text-4xl font-display font-bold mb-4">
+            <h1 className="text-3xl sm:text-4xl font-display font-bold mb-4">
               <span className="text-gradient-gold">Wallet</span>
             </h1>
-            <div className="inline-flex items-center gap-4 px-8 py-4 bg-gradient-to-r from-card to-card/80 rounded-2xl border border-primary/30 shadow-lg">
-              <Wallet className="w-8 h-8 text-primary" />
+            <div className="inline-flex items-center gap-3 sm:gap-4 px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-card to-card/80 rounded-2xl border border-primary/30 shadow-lg">
+              <Wallet className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
               <div className="text-left">
-                <p className="text-sm text-muted-foreground">Current Balance</p>
-                <p className="text-3xl font-display font-bold text-primary">
-                  ${formatCredits(profile?.balance ?? 0)}
+                <p className="text-xs sm:text-sm text-muted-foreground">Current Balance</p>
+                <p className="text-2xl sm:text-3xl font-display font-bold text-primary">
+                  NPR {formatCredits(profile?.balance ?? 0)}
                 </p>
               </div>
             </div>
@@ -161,9 +161,9 @@ const WalletPage = () => {
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl"
+              className="mb-4 sm:mb-6 p-3 sm:p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl"
             >
-              <p className="text-amber-400 text-sm font-medium flex items-center gap-2">
+              <p className="text-amber-400 text-xs sm:text-sm font-medium flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 You have {pendingDeposits.length + pendingWithdrawals.length} pending request(s) awaiting admin approval
               </p>
@@ -171,28 +171,28 @@ const WalletPage = () => {
           )}
 
           <Tabs defaultValue="deposit" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50">
-              <TabsTrigger value="deposit" className="gap-2 data-[state=active]:bg-secondary/20">
-                <ArrowDownToLine className="w-4 h-4" />
+            <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6 bg-muted/50">
+              <TabsTrigger value="deposit" className="gap-1 sm:gap-2 text-xs sm:text-sm data-[state=active]:bg-secondary/20">
+                <ArrowDownToLine className="w-3 h-3 sm:w-4 sm:h-4" />
                 Request Deposit
               </TabsTrigger>
-              <TabsTrigger value="withdraw" className="gap-2 data-[state=active]:bg-primary/20">
-                <ArrowUpFromLine className="w-4 h-4" />
+              <TabsTrigger value="withdraw" className="gap-1 sm:gap-2 text-xs sm:text-sm data-[state=active]:bg-primary/20">
+                <ArrowUpFromLine className="w-3 h-3 sm:w-4 sm:h-4" />
                 Request Withdraw
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="deposit">
               <Card className="border-secondary/20 bg-gradient-to-b from-card to-background">
-                <CardHeader className="border-b border-border/50">
-                  <CardTitle className="font-display text-secondary">Request Deposit</CardTitle>
-                  <CardDescription>
+                <CardHeader className="border-b border-border/50 py-4 sm:py-6">
+                  <CardTitle className="font-display text-secondary text-lg sm:text-xl">Request Deposit</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
                     Submit a deposit request. Admin will review and approve your request.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6 pt-6">
+                <CardContent className="space-y-4 sm:space-y-6 pt-4 sm:pt-6 p-4 sm:p-6">
                   <div className="space-y-2">
-                    <Label>Amount (Minimum $10)</Label>
+                    <Label className="text-sm">Amount (Minimum NPR 10)</Label>
                     <Input
                       type="number"
                       min={10}
@@ -200,16 +200,16 @@ const WalletPage = () => {
                       onChange={(e) => setDepositAmount(Number(e.target.value))}
                       className="bg-muted/50"
                     />
-                    <div className="flex gap-2">
-                      {[10, 25, 50, 100, 250].map((amount) => (
+                    <div className="grid grid-cols-5 gap-1 sm:gap-2">
+                      {[100, 250, 500, 1000, 2500].map((amount) => (
                         <Button
                           key={amount}
                           variant="outline"
                           size="sm"
                           onClick={() => setDepositAmount(amount)}
-                          className="flex-1"
+                          className="text-xs sm:text-sm px-1 sm:px-2"
                         >
-                          ${amount}
+                          {amount}
                         </Button>
                       ))}
                     </div>
@@ -218,14 +218,14 @@ const WalletPage = () => {
                   <Button 
                     variant="emerald" 
                     size="lg" 
-                    className="w-full"
+                    className="w-full text-sm sm:text-base"
                     onClick={handleDepositRequest}
                     disabled={processing || depositAmount < 10}
                   >
                     {processing ? 'Submitting...' : (
                       <>
                         <Send className="w-4 h-4" />
-                        Request ${depositAmount} Deposit
+                        Request NPR {depositAmount} Deposit
                       </>
                     )}
                   </Button>
@@ -239,15 +239,15 @@ const WalletPage = () => {
 
             <TabsContent value="withdraw">
               <Card className="border-primary/20 bg-gradient-to-b from-card to-background">
-                <CardHeader className="border-b border-border/50">
-                  <CardTitle className="font-display text-primary">Request Withdrawal</CardTitle>
-                  <CardDescription>
+                <CardHeader className="border-b border-border/50 py-4 sm:py-6">
+                  <CardTitle className="font-display text-primary text-lg sm:text-xl">Request Withdrawal</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
                     Submit a withdrawal request. Admin will review and process your request.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6 pt-6">
+                <CardContent className="space-y-4 sm:space-y-6 pt-4 sm:pt-6 p-4 sm:p-6">
                   <div className="space-y-2">
-                    <Label>Amount (Minimum $100)</Label>
+                    <Label className="text-sm">Amount (Minimum NPR 100)</Label>
                     <Input
                       type="number"
                       min={100}
@@ -256,24 +256,24 @@ const WalletPage = () => {
                       onChange={(e) => setWithdrawAmount(Number(e.target.value))}
                       className="bg-muted/50"
                     />
-                    <div className="flex gap-2">
-                      {[100, 250, 500].map((amount) => (
+                    <div className="grid grid-cols-4 gap-1 sm:gap-2">
+                      {[100, 500, 1000].map((amount) => (
                         <Button
                           key={amount}
                           variant="outline"
                           size="sm"
                           onClick={() => setWithdrawAmount(amount)}
                           disabled={(profile?.balance ?? 0) < amount}
-                          className="flex-1"
+                          className="text-xs sm:text-sm px-1 sm:px-2"
                         >
-                          ${amount}
+                          {amount}
                         </Button>
                       ))}
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setWithdrawAmount(profile?.balance ?? 0)}
-                        className="flex-1"
+                        className="text-xs sm:text-sm px-1 sm:px-2"
                       >
                         Max
                       </Button>
@@ -283,14 +283,14 @@ const WalletPage = () => {
                   <Button 
                     variant="gold" 
                     size="lg" 
-                    className="w-full"
+                    className="w-full text-sm sm:text-base"
                     onClick={handleWithdrawRequest}
                     disabled={processing || withdrawAmount < 100 || (profile?.balance ?? 0) < withdrawAmount}
                   >
                     {processing ? 'Submitting...' : (
                       <>
                         <Send className="w-4 h-4" />
-                        Request ${withdrawAmount} Withdrawal
+                        Request NPR {withdrawAmount} Withdrawal
                       </>
                     )}
                   </Button>
@@ -304,49 +304,49 @@ const WalletPage = () => {
           </Tabs>
 
           {/* Transaction History */}
-          <Card className="mt-8 border-border/50">
-            <CardHeader className="border-b border-border/50">
-              <CardTitle className="font-display flex items-center gap-2">
-                <Clock className="w-5 h-5" />
+          <Card className="mt-6 sm:mt-8 border-border/50">
+            <CardHeader className="border-b border-border/50 py-4 sm:py-6">
+              <CardTitle className="font-display flex items-center gap-2 text-lg sm:text-xl">
+                <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
                 Transaction History
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
               {transactions.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
+                <p className="text-center text-muted-foreground py-6 sm:py-8 text-sm">
                   No transactions yet
                 </p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {transactions.map((tx) => (
                     <div
                       key={tx.id}
-                      className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/30"
+                      className="flex items-center justify-between p-3 sm:p-4 bg-muted/30 rounded-xl border border-border/30"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                         {tx.type === 'deposit' ? (
-                          <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
-                            <ArrowDownToLine className="w-5 h-5 text-secondary" />
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-secondary/20 flex items-center justify-center shrink-0">
+                            <ArrowDownToLine className="w-4 h-4 sm:w-5 sm:h-5 text-secondary" />
                           </div>
                         ) : (
-                          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                            <ArrowUpFromLine className="w-5 h-5 text-primary" />
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                            <ArrowUpFromLine className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                           </div>
                         )}
-                        <div>
-                          <p className="font-medium capitalize">{tx.type} Request</p>
-                          <p className="text-sm text-muted-foreground">
+                        <div className="min-w-0">
+                          <p className="font-medium capitalize text-sm sm:text-base">{tx.type} Request</p>
+                          <p className="text-xs sm:text-sm text-muted-foreground">
                             {new Date(tx.created_at).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className={`font-semibold ${
+                      <div className="text-right shrink-0 ml-2">
+                        <p className={`font-semibold text-sm sm:text-base ${
                           tx.type === 'deposit' ? 'text-secondary' : 'text-primary'
                         }`}>
-                          {tx.type === 'deposit' ? '+' : '-'}${tx.amount}
+                          {tx.type === 'deposit' ? '+' : '-'}NPR {tx.amount}
                         </p>
-                        <div className="flex items-center gap-1 text-sm">
+                        <div className="flex items-center gap-1 text-xs sm:text-sm justify-end">
                           {tx.status === 'completed' && (
                             <>
                               <CheckCircle className="w-3 h-3 text-secondary" />

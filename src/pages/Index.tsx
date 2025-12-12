@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/layout/Header";
 import { useAuth } from "@/hooks/useAuth";
-import { Coins, Gamepad2, Shield, Gift, Wallet, Zap, Trophy } from "lucide-react";
+import { Gamepad2, Shield, Gift, Wallet, Zap, Trophy } from "lucide-react";
 import { formatCredits } from "@/lib/gameUtils";
+import logoImage from "@/assets/lucky-sim-logo.png";
 
 const Index = () => {
   const { user, profile } = useAuth();
@@ -65,13 +66,13 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pt-20">
+      <main className="pt-16 sm:pt-20">
         {/* Hero Section */}
-        <section className="relative overflow-hidden py-24 lg:py-32">
+        <section className="relative overflow-hidden py-16 sm:py-24 lg:py-32">
           {/* Background Effects */}
           <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-secondary/10 rounded-full blur-3xl" />
+          <div className="absolute top-1/4 left-1/4 w-64 sm:w-96 h-64 sm:h-96 bg-primary/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-1/4 right-1/4 w-56 sm:w-80 h-56 sm:h-80 bg-secondary/10 rounded-full blur-3xl" />
           
           <motion.div
             variants={containerVariants}
@@ -79,19 +80,19 @@ const Index = () => {
             animate="visible"
             className="container mx-auto px-4 relative z-10"
           >
-            <motion.div variants={itemVariants} className="text-center mb-8">
-              <motion.div
-                className="w-28 h-28 mx-auto bg-gradient-to-br from-primary via-primary/80 to-amber-600 rounded-3xl flex items-center justify-center shadow-2xl mb-6 border-2 border-primary/30"
+            <motion.div variants={itemVariants} className="text-center mb-6 sm:mb-8">
+              <motion.img
+                src={logoImage}
+                alt="LuckySim Casino"
+                className="w-24 h-24 sm:w-28 sm:h-28 mx-auto rounded-3xl shadow-2xl mb-4 sm:mb-6"
                 animate={{ rotate: [0, 5, -5, 0] }}
                 transition={{ repeat: Infinity, duration: 3 }}
-              >
-                <span className="text-5xl font-bold text-primary-foreground font-display">L</span>
-              </motion.div>
+              />
             </motion.div>
             
             <motion.h1 
               variants={itemVariants}
-              className="text-5xl md:text-7xl font-display font-bold text-center mb-6"
+              className="text-4xl sm:text-5xl md:text-7xl font-display font-bold text-center mb-4 sm:mb-6"
             >
               Welcome to{" "}
               <span className="text-gradient-gold">LuckySim</span>
@@ -99,7 +100,7 @@ const Index = () => {
             
             <motion.p 
               variants={itemVariants}
-              className="text-xl md:text-2xl text-muted-foreground text-center max-w-2xl mx-auto mb-10"
+              className="text-lg sm:text-xl md:text-2xl text-muted-foreground text-center max-w-2xl mx-auto mb-8 sm:mb-10 px-4"
             >
               Experience the thrill of casino games with virtual credits. 
               No real money, just pure entertainment!
@@ -107,19 +108,19 @@ const Index = () => {
             
             <motion.div 
               variants={itemVariants}
-              className="flex flex-col sm:flex-row gap-4 justify-center"
+              className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center px-4"
             >
               {user ? (
                 <>
                   <Link to="/games">
-                    <Button variant="gold" size="xl" className="w-full sm:w-auto text-lg font-bold">
-                      <Gamepad2 className="w-6 h-6" />
+                    <Button variant="gold" size="lg" className="w-full sm:w-auto text-base sm:text-lg font-bold">
+                      <Gamepad2 className="w-5 h-5 sm:w-6 sm:h-6" />
                       Play Now
                     </Button>
                   </Link>
                   <Link to="/wallet">
-                    <Button variant="outline" size="xl" className="w-full sm:w-auto text-lg">
-                      <Wallet className="w-6 h-6" />
+                    <Button variant="outline" size="lg" className="w-full sm:w-auto text-base sm:text-lg">
+                      <Wallet className="w-5 h-5 sm:w-6 sm:h-6" />
                       Wallet
                     </Button>
                   </Link>
@@ -127,13 +128,13 @@ const Index = () => {
               ) : (
                 <>
                   <Link to="/auth">
-                    <Button variant="gold" size="xl" className="w-full sm:w-auto text-lg font-bold">
-                      <Gift className="w-6 h-6" />
-                      Get $10 Free
+                    <Button variant="gold" size="lg" className="w-full sm:w-auto text-base sm:text-lg font-bold">
+                      <Gift className="w-5 h-5 sm:w-6 sm:h-6" />
+                      Get NPR 10 Free
                     </Button>
                   </Link>
                   <Link to="/auth?mode=login">
-                    <Button variant="outline" size="xl" className="w-full sm:w-auto text-lg">
+                    <Button variant="outline" size="lg" className="w-full sm:w-auto text-base sm:text-lg">
                       Sign In
                     </Button>
                   </Link>
@@ -144,13 +145,12 @@ const Index = () => {
             {user && profile && (
               <motion.div 
                 variants={itemVariants}
-                className="mt-8 text-center"
+                className="mt-6 sm:mt-8 text-center px-4"
               >
                 <Link to="/wallet">
-                  <div className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-card to-card/80 rounded-2xl border border-primary/30 hover:border-primary transition-colors cursor-pointer shadow-lg">
-                    <Coins className="w-7 h-7 text-primary" />
-                    <span className="text-xl font-semibold">
-                      Your Balance: <span className="text-primary font-bold">${formatCredits(profile.balance)}</span>
+                  <div className="inline-flex items-center gap-2 sm:gap-3 px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-card to-card/80 rounded-2xl border border-primary/30 hover:border-primary transition-colors cursor-pointer shadow-lg">
+                    <span className="text-lg sm:text-xl font-semibold">
+                      Your Balance: <span className="text-primary font-bold">NPR {formatCredits(profile.balance)}</span>
                     </span>
                   </div>
                 </Link>
@@ -160,13 +160,13 @@ const Index = () => {
         </section>
 
         {/* Games Preview */}
-        <section className="py-20 bg-gradient-to-b from-card/50 to-background">
+        <section className="py-12 sm:py-20 bg-gradient-to-b from-card/50 to-background">
           <div className="container mx-auto px-4">
             <motion.h2 
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="text-3xl md:text-4xl font-display font-bold text-center mb-4"
+              className="text-2xl sm:text-3xl md:text-4xl font-display font-bold text-center mb-3 sm:mb-4"
             >
               Featured <span className="text-gradient-gold">Games</span>
             </motion.h2>
@@ -174,12 +174,12 @@ const Index = () => {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="text-muted-foreground text-center mb-12 max-w-xl mx-auto"
+              className="text-muted-foreground text-center mb-8 sm:mb-12 max-w-xl mx-auto text-sm sm:text-base"
             >
               Choose from our collection of exciting casino games
             </motion.p>
             
-            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6 max-w-6xl mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-6 max-w-6xl mx-auto">
               {games.map((game, index) => (
                 <motion.div
                   key={game.id}
@@ -192,22 +192,22 @@ const Index = () => {
                     glow={game.color} 
                     className="h-full card-shine group hover:scale-105 transition-transform duration-300"
                   >
-                    <CardContent className="p-6 text-center space-y-4">
+                    <CardContent className="p-4 sm:p-6 text-center space-y-2 sm:space-y-4">
                       <motion.span 
-                        className="text-5xl inline-block"
+                        className="text-3xl sm:text-5xl inline-block"
                         whileHover={{ scale: 1.2, rotate: 10 }}
                       >
                         {game.icon}
                       </motion.span>
-                      <h3 className="text-lg font-display font-semibold">{game.name}</h3>
-                      <p className="text-muted-foreground text-sm">{game.description}</p>
+                      <h3 className="text-sm sm:text-lg font-display font-semibold">{game.name}</h3>
+                      <p className="text-muted-foreground text-xs sm:text-sm hidden sm:block">{game.description}</p>
                       <Link to={user ? `/games/${game.id}` : '/auth'}>
                         <Button 
                           variant={game.color === 'purple' ? 'royal' : game.color} 
                           className="w-full mt-2"
                           size="sm"
                         >
-                          Play Now
+                          Play
                         </Button>
                       </Link>
                     </CardContent>
@@ -219,22 +219,22 @@ const Index = () => {
         </section>
 
         {/* Features */}
-        <section className="py-20">
+        <section className="py-12 sm:py-20">
           <div className="container mx-auto px-4">
             <motion.h2 
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="text-3xl md:text-4xl font-display font-bold text-center mb-12"
+              className="text-2xl sm:text-3xl md:text-4xl font-display font-bold text-center mb-8 sm:mb-12"
             >
               Why Choose <span className="text-gradient-gold">LuckySim</span>
             </motion.h2>
-            <div className="grid md:grid-cols-4 gap-8 max-w-5xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-8 max-w-5xl mx-auto">
               {[
-                { icon: Gift, title: '$10 Free Signup', description: 'Start playing instantly with free credits', color: 'text-primary' },
+                { icon: Gift, title: 'NPR 10 Free Signup', description: 'Start playing instantly with free credits', color: 'text-primary' },
                 { icon: Shield, title: '100% Safe', description: 'No real money involved - just fun!', color: 'text-secondary' },
                 { icon: Zap, title: 'Instant Play', description: 'No downloads required', color: 'text-amber-400' },
-                { icon: Trophy, title: 'Fair Games', description: '33% win rate on all games', color: 'text-purple-400' },
+                { icon: Trophy, title: 'Fair Games', description: 'Admin controlled win rates', color: 'text-purple-400' },
               ].map((feature, index) => (
                 <motion.div
                   key={feature.title}
@@ -242,13 +242,13 @@ const Index = () => {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.1 }}
-                  className="text-center space-y-4 p-6 bg-card/50 rounded-2xl border border-border/50 hover:border-primary/30 transition-colors"
+                  className="text-center space-y-2 sm:space-y-4 p-4 sm:p-6 bg-card/50 rounded-2xl border border-border/50 hover:border-primary/30 transition-colors"
                 >
-                  <div className={`w-16 h-16 mx-auto bg-gradient-to-br from-muted to-muted/50 rounded-2xl flex items-center justify-center ${feature.color}`}>
-                    <feature.icon className="w-8 h-8" />
+                  <div className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto bg-gradient-to-br from-muted to-muted/50 rounded-2xl flex items-center justify-center ${feature.color}`}>
+                    <feature.icon className="w-6 h-6 sm:w-8 sm:h-8" />
                   </div>
-                  <h3 className="font-display font-semibold text-lg">{feature.title}</h3>
-                  <p className="text-muted-foreground text-sm">{feature.description}</p>
+                  <h3 className="font-display font-semibold text-sm sm:text-lg">{feature.title}</h3>
+                  <p className="text-muted-foreground text-xs sm:text-sm">{feature.description}</p>
                 </motion.div>
               ))}
             </div>
@@ -256,9 +256,9 @@ const Index = () => {
         </section>
 
         {/* Disclaimer */}
-        <section className="py-8 border-t border-border/50">
+        <section className="py-6 sm:py-8 border-t border-border/50">
           <div className="container mx-auto px-4">
-            <p className="text-center text-sm text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-center text-xs sm:text-sm text-muted-foreground max-w-2xl mx-auto">
               ⚠️ <strong>Simulated game for educational use only</strong> – no real money involved. 
               This platform is for entertainment purposes and does not offer real gambling services.
             </p>

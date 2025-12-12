@@ -1,7 +1,19 @@
 import confetti from 'canvas-confetti';
+import { supabase } from '@/integrations/supabase/client';
 
-// Seeded random with 33% win probability
-export const checkWin = (winProbability: number = 0.33): boolean => {
+// Fetch win probability from database (default 15%)
+export const getWinProbability = async (): Promise<number> => {
+  const { data } = await supabase
+    .from('game_settings')
+    .select('setting_value')
+    .eq('setting_key', 'win_probability')
+    .single();
+  
+  return data?.setting_value ?? 0.15;
+};
+
+// Seeded random with configurable win probability
+export const checkWin = (winProbability: number = 0.15): boolean => {
   return Math.random() < winProbability;
 };
 
@@ -41,7 +53,7 @@ export const triggerWinConfetti = () => {
 };
 
 export const formatCredits = (amount: number): string => {
-  return new Intl.NumberFormat('en-US').format(amount);
+  return new Intl.NumberFormat('en-NP').format(amount);
 };
 
 // Slot machine symbols
