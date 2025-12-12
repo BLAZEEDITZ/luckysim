@@ -5,13 +5,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
-  checkWin, 
   triggerWinConfetti, 
   formatCredits,
   createDeck,
   calculateHandValue,
   isCardRed,
-  Card as CardType
+  Card as CardType,
+  getWinProbability
 } from "@/lib/gameUtils";
 import { Coins, Minus, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ const PlayingCard = ({ card, hidden = false }: { card: CardType; hidden?: boolea
       initial={{ rotateY: 180, scale: 0.8 }}
       animate={{ rotateY: hidden ? 180 : 0, scale: 1 }}
       transition={{ duration: 0.4 }}
-      className={`w-16 h-24 sm:w-20 sm:h-28 rounded-lg flex flex-col items-center justify-center font-bold text-lg sm:text-xl shadow-lg border-2 ${
+      className={`w-12 h-18 sm:w-16 sm:h-24 md:w-20 md:h-28 rounded-lg flex flex-col items-center justify-center font-bold text-base sm:text-lg md:text-xl shadow-lg border-2 ${
         hidden 
           ? 'bg-gradient-to-br from-purple-600 to-purple-900 border-purple-400' 
           : 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300'
@@ -44,13 +44,13 @@ const PlayingCard = ({ card, hidden = false }: { card: CardType; hidden?: boolea
           <span className={isCardRed(card) ? 'text-red-500' : 'text-gray-900'}>
             {card.value}
           </span>
-          <span className={`text-2xl ${isCardRed(card) ? 'text-red-500' : 'text-gray-900'}`}>
+          <span className={`text-xl sm:text-2xl ${isCardRed(card) ? 'text-red-500' : 'text-gray-900'}`}>
             {card.suit}
           </span>
         </>
       )}
       {hidden && (
-        <span className="text-3xl text-purple-300">?</span>
+        <span className="text-2xl sm:text-3xl text-purple-300">?</span>
       )}
     </motion.div>
   );
@@ -98,7 +98,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     if (won) {
       triggerWinConfetti();
       await updateBalance(payout);
-      toast.success(`You won $${formatCredits(payout)}!`);
+      toast.success(`You won NPR ${formatCredits(payout)}!`);
     } else if (push) {
       await updateBalance(bet);
       toast.info("Push! Bet returned.");
@@ -132,9 +132,12 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     if (phase !== 'playing') return;
     setPhase('dealer');
     
+    // Get win probability from settings
+    const winProb = await getWinProbability();
+    
     // Dealer plays with controlled probability
     setTimeout(async () => {
-      const shouldWin = checkWin(gameConfig.winProbability);
+      const shouldWin = Math.random() < winProb;
       const playerValue = calculateHandValue(playerHand);
       
       let newDealerHand = [...dealerHand];
@@ -198,20 +201,20 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
 
   return (
     <Card className="w-full max-w-2xl mx-auto overflow-hidden border-accent/20 bg-gradient-to-b from-card to-background">
-      <CardHeader className="text-center bg-gradient-to-b from-accent/10 to-transparent border-b border-accent/10">
-        <CardTitle className="text-accent text-3xl font-display">21 Blackjack</CardTitle>
-        <p className="text-muted-foreground">Get closer to 21 than the dealer!</p>
+      <CardHeader className="text-center bg-gradient-to-b from-accent/10 to-transparent border-b border-accent/10 py-4 sm:py-6">
+        <CardTitle className="text-accent text-2xl sm:text-3xl font-display">21 Blackjack</CardTitle>
+        <p className="text-muted-foreground text-sm sm:text-base">Get closer to 21 than the dealer!</p>
       </CardHeader>
       
-      <CardContent className="space-y-6 p-6">
+      <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
         {/* Game Table */}
-        <div className={`bg-gradient-to-b from-emerald-900 to-emerald-950 rounded-2xl p-6 space-y-6 border-4 border-emerald-700 ${shake ? 'animate-shake' : ''}`}>
+        <div className={`bg-gradient-to-b from-emerald-900 to-emerald-950 rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-6 border-4 border-emerald-700 ${shake ? 'animate-shake' : ''}`}>
           {/* Dealer's Hand */}
           <div className="text-center space-y-2">
-            <p className="text-emerald-300 font-semibold">
+            <p className="text-emerald-300 font-semibold text-sm sm:text-base">
               Dealer {phase !== 'betting' && `(${dealerValue}${phase !== 'finished' && dealerHand.length > 1 ? '+' : ''})`}
             </p>
-            <div className="flex justify-center gap-2 min-h-[112px]">
+            <div className="flex justify-center gap-1 sm:gap-2 min-h-[72px] sm:min-h-[112px]">
               {dealerHand.map((card, index) => (
                 <PlayingCard 
                   key={index} 
@@ -220,7 +223,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
                 />
               ))}
               {dealerHand.length === 0 && (
-                <div className="w-20 h-28 rounded-lg border-2 border-dashed border-emerald-600/50" />
+                <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-lg border-2 border-dashed border-emerald-600/50" />
               )}
             </div>
           </div>
@@ -230,15 +233,15 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
 
           {/* Player's Hand */}
           <div className="text-center space-y-2">
-            <p className="text-emerald-300 font-semibold">
+            <p className="text-emerald-300 font-semibold text-sm sm:text-base">
               Your Hand {phase !== 'betting' && `(${playerValue})`}
             </p>
-            <div className="flex justify-center gap-2 flex-wrap min-h-[112px]">
+            <div className="flex justify-center gap-1 sm:gap-2 flex-wrap min-h-[72px] sm:min-h-[112px]">
               {playerHand.map((card, index) => (
                 <PlayingCard key={index} card={card} />
               ))}
               {playerHand.length === 0 && (
-                <div className="w-20 h-28 rounded-lg border-2 border-dashed border-emerald-600/50" />
+                <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-lg border-2 border-dashed border-emerald-600/50" />
               )}
             </div>
           </div>
@@ -251,15 +254,15 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className={`text-center p-4 rounded-xl ${
+              className={`text-center p-3 sm:p-4 rounded-xl ${
                 result.won 
                   ? 'bg-secondary/20 border border-secondary text-secondary' 
                   : 'bg-destructive/20 border border-destructive text-destructive'
               }`}
             >
-              <p className="text-lg font-bold">
+              <p className="text-base sm:text-lg font-bold">
                 {result.won 
-                  ? `🎉 ${result.message} +$${formatCredits(result.amount)}!` 
+                  ? `🎉 ${result.message} +NPR ${formatCredits(result.amount)}!` 
                   : `😔 ${result.message}`}
               </p>
             </motion.div>
@@ -267,23 +270,23 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
         </AnimatePresence>
 
         {/* Controls */}
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {phase === 'betting' && (
             <>
-              <div className="flex items-center justify-center gap-4">
+              <div className="flex items-center justify-center gap-2 sm:gap-4">
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => adjustBet(-20)}
                   disabled={bet <= gameConfig.minBet}
-                  className="rounded-full"
+                  className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
                 >
                   <Minus className="w-4 h-4" />
                 </Button>
                 
-                <div className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-accent/20 to-accent/10 rounded-xl min-w-[140px] justify-center border border-accent/30">
-                  <Coins className="w-5 h-5 text-accent" />
-                  <span className="text-xl font-bold text-accent">${formatCredits(bet)}</span>
+                <div className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-accent/20 to-accent/10 rounded-xl min-w-[120px] sm:min-w-[140px] justify-center border border-accent/30">
+                  <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-accent" />
+                  <span className="text-lg sm:text-xl font-bold text-accent">NPR {formatCredits(bet)}</span>
                 </div>
                 
                 <Button
@@ -291,7 +294,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
                   size="icon"
                   onClick={() => adjustBet(20)}
                   disabled={bet >= gameConfig.maxBet}
-                  className="rounded-full"
+                  className="rounded-full w-9 h-9 sm:w-10 sm:h-10"
                 >
                   <Plus className="w-4 h-4" />
                 </Button>
@@ -299,33 +302,33 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
 
               <Button
                 variant="royal"
-                size="xl"
-                className="w-full text-lg font-bold"
+                size="lg"
+                className="w-full text-base sm:text-lg font-bold"
                 onClick={startGame}
                 disabled={!user || bet > balance}
               >
-                <span className="text-2xl">🃏</span>
+                <span className="text-xl sm:text-2xl">🃏</span>
                 DEAL CARDS
               </Button>
             </>
           )}
 
           {phase === 'playing' && (
-            <div className="flex gap-4 justify-center">
+            <div className="flex gap-3 sm:gap-4 justify-center">
               <Button
                 variant="emerald"
                 size="lg"
                 onClick={hit}
-                className="flex-1"
+                className="flex-1 text-sm sm:text-base"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                 HIT
               </Button>
               <Button
                 variant="casino"
                 size="lg"
                 onClick={stand}
-                className="flex-1"
+                className="flex-1 text-sm sm:text-base"
               >
                 ✋ STAND
               </Button>
@@ -347,11 +350,11 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
           {phase === 'finished' && (
             <Button
               variant="gold"
-              size="xl"
-              className="w-full text-lg font-bold"
+              size="lg"
+              className="w-full text-base sm:text-lg font-bold"
               onClick={newRound}
             >
-              <RotateCcw className="w-5 h-5" />
+              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
               PLAY AGAIN
             </Button>
           )}
