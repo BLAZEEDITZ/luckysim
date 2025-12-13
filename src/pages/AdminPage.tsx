@@ -22,7 +22,8 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Settings,
-  Save
+  Save,
+  Gamepad2
 } from "lucide-react";
 
 interface Transaction {
@@ -55,13 +56,42 @@ interface BetLog {
   user_email?: string;
 }
 
+interface GameWinRates {
+  slots: number;
+  roulette: number;
+  blackjack: number;
+  plinko: number;
+  mines: number;
+}
+
+interface UserWinRate {
+  user_id: string;
+  game: string;
+  win_probability: number;
+}
+
+const GAME_NAMES: Record<string, string> = {
+  slots: 'Lucky Slots',
+  roulette: 'Roulette',
+  blackjack: 'Blackjack',
+  plinko: 'Plinko',
+  mines: 'Mines'
+};
+
 const AdminPage = () => {
   const { user, isAdmin, loading } = useAuth();
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [betLogs, setBetLogs] = useState<BetLog[]>([]);
-  const [winProbability, setWinProbability] = useState(15);
+  const [globalWinProbability, setGlobalWinProbability] = useState(15);
+  const [gameWinRates, setGameWinRates] = useState<GameWinRates>({
+    slots: 15, roulette: 15, blackjack: 15, plinko: 15, mines: 15
+  });
+  const [userWinRates, setUserWinRates] = useState<UserWinRate[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedGame, setSelectedGame] = useState<string>('slots');
+  const [userSpecificRate, setUserSpecificRate] = useState<number>(15);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalBets: 0,
@@ -79,26 +109,47 @@ const AdminPage = () => {
     if (isAdmin) {
       fetchData();
       fetchGameSettings();
+      fetchUserWinRates();
     }
   }, [isAdmin]);
 
   const fetchGameSettings = async () => {
     const { data } = await supabase
       .from('game_settings')
-      .select('*')
-      .eq('setting_key', 'win_probability')
-      .single();
+      .select('*');
     
     if (data) {
-      setWinProbability(Number(data.setting_value) * 100);
+      const settings: Record<string, number> = {};
+      data.forEach(s => {
+        settings[s.setting_key] = Number(s.setting_value) * 100;
+      });
+      
+      setGlobalWinProbability(settings['win_probability'] ?? 15);
+      setGameWinRates({
+        slots: settings['win_probability_slots'] ?? 15,
+        roulette: settings['win_probability_roulette'] ?? 15,
+        blackjack: settings['win_probability_blackjack'] ?? 15,
+        plinko: settings['win_probability_plinko'] ?? 15,
+        mines: settings['win_probability_mines'] ?? 15,
+      });
     }
   };
 
-  const updateWinProbability = async () => {
+  const fetchUserWinRates = async () => {
+    const { data } = await supabase
+      .from('user_win_rates')
+      .select('*');
+    
+    if (data) {
+      setUserWinRates(data as UserWinRate[]);
+    }
+  };
+
+  const updateGlobalWinProbability = async () => {
     const { error } = await supabase
       .from('game_settings')
       .update({ 
-        setting_value: winProbability / 100,
+        setting_value: globalWinProbability / 100,
         updated_at: new Date().toISOString()
       })
       .eq('setting_key', 'win_probability');
@@ -106,24 +157,74 @@ const AdminPage = () => {
     if (error) {
       toast.error("Failed to update win probability");
     } else {
-      toast.success(`Win probability updated to ${winProbability}%`);
+      toast.success(`Global win probability updated to ${globalWinProbability}%`);
+    }
+  };
+
+  const updateGameWinRate = async (game: string, rate: number) => {
+    const { error } = await supabase
+      .from('game_settings')
+      .update({ 
+        setting_value: rate / 100,
+        updated_at: new Date().toISOString()
+      })
+      .eq('setting_key', `win_probability_${game}`);
+
+    if (error) {
+      toast.error(`Failed to update ${GAME_NAMES[game]} win rate`);
+    } else {
+      toast.success(`${GAME_NAMES[game]} win rate updated to ${rate}%`);
+      setGameWinRates(prev => ({ ...prev, [game]: rate }));
+    }
+  };
+
+  const setUserWinRate = async () => {
+    if (!selectedUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+
+    const { error } = await supabase
+      .from('user_win_rates')
+      .upsert({
+        user_id: selectedUserId,
+        game: selectedGame,
+        win_probability: userSpecificRate / 100,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,game' });
+
+    if (error) {
+      toast.error("Failed to set user win rate");
+    } else {
+      toast.success("User-specific win rate saved!");
+      fetchUserWinRates();
+    }
+  };
+
+  const removeUserWinRate = async (userId: string, game: string) => {
+    const { error } = await supabase
+      .from('user_win_rates')
+      .delete()
+      .eq('user_id', userId)
+      .eq('game', game);
+
+    if (!error) {
+      toast.success("User rate removed");
+      fetchUserWinRates();
     }
   };
 
   const fetchData = async () => {
-    // Fetch pending transactions
     const { data: txData } = await supabase
       .from('transactions')
       .select('*')
       .order('created_at', { ascending: false });
 
-    // Fetch all profiles
     const { data: profileData } = await supabase
       .from('profiles')
       .select('*')
       .order('balance', { ascending: false });
 
-    // Fetch bet logs
     const { data: betData } = await supabase
       .from('bet_logs')
       .select('*')
@@ -133,7 +234,6 @@ const AdminPage = () => {
     if (profileData) {
       setProfiles(profileData as Profile[]);
       
-      // Enrich transactions with emails
       if (txData) {
         const enrichedTx = txData.map(tx => ({
           ...tx,
@@ -142,7 +242,6 @@ const AdminPage = () => {
         setTransactions(enrichedTx as Transaction[]);
       }
 
-      // Enrich bet logs with emails
       if (betData) {
         const enrichedBets = betData.map(bet => ({
           ...bet,
@@ -150,7 +249,6 @@ const AdminPage = () => {
         }));
         setBetLogs(enrichedBets as BetLog[]);
 
-        // Calculate stats
         const totalBets = betData.length;
         const totalWagered = betData.reduce((acc, log) => acc + Number(log.bet_amount), 0);
         const wins = betData.filter(log => log.won).length;
@@ -170,7 +268,7 @@ const AdminPage = () => {
   const [newBalance, setNewBalance] = useState<number>(0);
 
   const handleApproveTransaction = async (tx: Transaction) => {
-    if (processingTx === tx.id) return; // Prevent double-click
+    if (processingTx === tx.id) return;
     setProcessingTx(tx.id);
     try {
       await supabase
@@ -279,24 +377,137 @@ const AdminPage = () => {
                   Game Control
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
+              <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6 space-y-6">
+                {/* Global Win Rate */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3 sm:gap-4">
                   <div className="w-full sm:flex-1 space-y-2">
-                    <Label className="text-sm sm:text-base">Win Probability (%)</Label>
-                    <p className="text-xs text-muted-foreground">Controls how often players win across all games</p>
+                    <Label className="text-sm sm:text-base font-semibold">Global Win Probability (%)</Label>
+                    <p className="text-xs text-muted-foreground">Fallback rate for all games</p>
                     <Input
                       type="number"
                       min={1}
                       max={100}
-                      value={winProbability}
-                      onChange={(e) => setWinProbability(Number(e.target.value))}
+                      value={globalWinProbability}
+                      onChange={(e) => setGlobalWinProbability(Number(e.target.value))}
                       className="max-w-[200px]"
                     />
                   </div>
-                  <Button onClick={updateWinProbability} variant="gold" className="w-full sm:w-auto">
+                  <Button onClick={updateGlobalWinProbability} variant="gold" className="w-full sm:w-auto">
                     <Save className="w-4 h-4 mr-2" />
-                    Save Settings
+                    Save Global
                   </Button>
+                </div>
+
+                {/* Per-Game Win Rates */}
+                <div className="space-y-3">
+                  <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
+                    <Gamepad2 className="w-4 h-4" />
+                    Per-Game Win Rates
+                  </Label>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {Object.entries(GAME_NAMES).map(([key, name]) => (
+                      <div key={key} className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
+                        <span className="text-sm flex-1">{name}</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={gameWinRates[key as keyof GameWinRates]}
+                          onChange={(e) => setGameWinRates(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                          className="w-20 h-8 text-sm"
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="h-8 px-2"
+                          onClick={() => updateGameWinRate(key, gameWinRates[key as keyof GameWinRates])}
+                        >
+                          <Save className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* User-Specific Win Rates */}
+                <div className="space-y-3 border-t border-border/50 pt-4">
+                  <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    User-Specific Win Rate
+                  </Label>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">User</Label>
+                      <select 
+                        className="h-9 px-3 rounded-md border border-border bg-background text-sm"
+                        value={selectedUserId}
+                        onChange={(e) => setSelectedUserId(e.target.value)}
+                      >
+                        <option value="">Select user...</option>
+                        {profiles.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.display_name || p.email?.split('@')[0]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Game</Label>
+                      <select 
+                        className="h-9 px-3 rounded-md border border-border bg-background text-sm"
+                        value={selectedGame}
+                        onChange={(e) => setSelectedGame(e.target.value)}
+                      >
+                        {Object.entries(GAME_NAMES).map(([key, name]) => (
+                          <option key={key} value={key}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Rate (%)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={userSpecificRate}
+                        onChange={(e) => setUserSpecificRate(Number(e.target.value))}
+                        className="w-20 h-9"
+                      />
+                    </div>
+                    <Button onClick={setUserWinRate} variant="emerald" size="sm">
+                      Set Rate
+                    </Button>
+                  </div>
+
+                  {/* Active User Rates */}
+                  {userWinRates.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs text-muted-foreground">Active User Overrides:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {userWinRates.map((rate) => {
+                          const player = profiles.find(p => p.id === rate.user_id);
+                          return (
+                            <div key={`${rate.user_id}-${rate.game}`} className="flex items-center gap-2 px-2 py-1 bg-secondary/20 rounded text-xs">
+                              <span>{player?.display_name || player?.email?.split('@')[0]}</span>
+                              <span className="text-muted-foreground">•</span>
+                              <span>{GAME_NAMES[rate.game]}</span>
+                              <span className="text-muted-foreground">•</span>
+                              <span className="text-secondary font-semibold">{(rate.win_probability * 100).toFixed(0)}%</span>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-5 w-5 p-0"
+                                onClick={() => removeUserWinRate(rate.user_id, rate.game)}
+                              >
+                                <XCircle className="w-3 h-3 text-destructive" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -331,7 +542,7 @@ const AdminPage = () => {
             ))}
           </motion.div>
 
-          {/* Pending Transactions - Most Important */}
+          {/* Pending Transactions */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

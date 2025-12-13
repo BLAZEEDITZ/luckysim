@@ -176,7 +176,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setCanDouble(false);
     setCanSplit(false);
     
-    const winProb = await getWinProbability();
+    const winProb = await getWinProbability('blackjack', user?.id);
     const shouldWin = Math.random() < winProb;
     const playerValue = calculateHandValue(playerHand);
     

@@ -58,7 +58,7 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     const interval = 80;
     let elapsed = 0;
 
-    const winProb = await getWinProbability();
+    const winProb = await getWinProbability('slots', user?.id);
 
     const spinInterval = setInterval(async () => {
       // Animate all reels

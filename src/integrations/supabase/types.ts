@@ -140,6 +140,33 @@ export type Database = {
         }
         Relationships: []
       }
+      user_win_rates: {
+        Row: {
+          created_at: string
+          game: string
+          id: string
+          updated_at: string
+          user_id: string
+          win_probability: number
+        }
+        Insert: {
+          created_at?: string
+          game: string
+          id?: string
+          updated_at?: string
+          user_id: string
+          win_probability?: number
+        }
+        Update: {
+          created_at?: string
+          game?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+          win_probability?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
