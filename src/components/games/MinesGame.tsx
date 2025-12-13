@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,9 +9,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCredits, triggerWinConfetti, getWinProbability } from "@/lib/gameUtils";
 import { toast } from "sonner";
-import { Bomb, Diamond, Coins, RotateCcw } from "lucide-react";
+import { Bomb, Diamond, Coins, RotateCcw, Grid3X3 } from "lucide-react";
 
-const GRID_SIZE = 25;
+type GridSize = 'small' | 'medium' | 'large';
+const GRID_CONFIG: Record<GridSize, { size: number; cols: number; maxMines: number }> = {
+  small: { size: 9, cols: 3, maxMines: 8 },
+  medium: { size: 16, cols: 4, maxMines: 15 },
+  large: { size: 25, cols: 5, maxMines: 24 },
+};
 
 interface Tile {
   id: number;
@@ -23,46 +28,43 @@ export const MinesGame = () => {
   const { profile, updateBalance, refreshProfile } = useAuth();
   const [betAmount, setBetAmount] = useState(10);
   const [mineCount, setMineCount] = useState(3);
+  const [gridSize, setGridSize] = useState<GridSize>('large');
   const [grid, setGrid] = useState<Tile[]>([]);
   const [gameActive, setGameActive] = useState(false);
   const [currentMultiplier, setCurrentMultiplier] = useState(1);
   const [revealedCount, setRevealedCount] = useState(0);
   const [gameOver, setGameOver] = useState(false);
 
-  // Calculate multiplier based on mines and revealed tiles
-  // Starts at 1x, scales up based on risk
-  const calculateMultiplier = useCallback((revealed: number, mines: number) => {
+  const gridConfig = GRID_CONFIG[gridSize];
+  const totalTiles = gridConfig.size;
+  const gridCols = gridConfig.cols;
+  const maxMines = gridConfig.maxMines;
+
+  // Adjust mine count when grid size changes
+  const effectiveMineCount = Math.min(mineCount, maxMines);
+
+  const calculateMultiplier = useCallback((revealed: number, mines: number, total: number) => {
     if (revealed === 0) return 1;
     
-    const safeSpots = GRID_SIZE - mines;
+    const safeSpots = total - mines;
     let multiplier = 1;
     
-    // Calculate probability-based multiplier
     for (let i = 0; i < revealed; i++) {
       const remainingSafe = safeSpots - i;
-      const remainingTotal = GRID_SIZE - i;
+      const remainingTotal = total - i;
       multiplier *= remainingTotal / remainingSafe;
     }
     
-    // Apply house edge (3%)
     multiplier *= 0.97;
-    
-    // Scale based on mine count - more mines = higher max multiplier
-    // With 1 mine: max ~24x, with 24 mines: max ~1000x
-    const maxMultiplier = mines === 1 ? 24 : mines * 10;
+    const maxMultiplier = mines === 1 ? 24 : Math.min(mines * 15, 1000);
     
     return Math.min(multiplier, maxMultiplier);
   }, []);
 
-  // Calculate max possible multiplier for display
   const maxPossibleMultiplier = useMemo(() => {
-    const safeSpots = GRID_SIZE - mineCount;
-    return calculateMultiplier(safeSpots, mineCount);
-  }, [mineCount, calculateMultiplier]);
-
-  // Track if player should win based on admin probability
-  const [shouldPlayerWin, setShouldPlayerWin] = useState(true);
-  const [winProbLoaded, setWinProbLoaded] = useState(false);
+    const safeSpots = totalTiles - effectiveMineCount;
+    return calculateMultiplier(safeSpots, effectiveMineCount, totalTiles);
+  }, [effectiveMineCount, totalTiles, calculateMultiplier]);
 
   const startGame = async () => {
     if (!profile || betAmount > profile.balance) {
@@ -75,37 +77,29 @@ export const MinesGame = () => {
       return;
     }
 
-    // Get win probability from admin settings
     const winProb = await getWinProbability();
     const shouldWin = Math.random() < winProb;
-    setShouldPlayerWin(shouldWin);
-    setWinProbLoaded(true);
 
-    // Deduct bet
     await updateBalance(-betAmount);
 
-    // Generate mines - if player shouldn't win, place more strategically
     const minePositions = new Set<number>();
     
     if (!shouldWin) {
-      // Force early mine hit - place mines in first few tiles player is likely to click
-      const earlyPositions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+      const earlyPositions = Array.from({ length: Math.min(15, totalTiles) }, (_, i) => i);
       const shuffled = earlyPositions.sort(() => Math.random() - 0.5);
-      for (let i = 0; i < Math.min(mineCount, shuffled.length); i++) {
+      for (let i = 0; i < Math.min(effectiveMineCount, shuffled.length); i++) {
         minePositions.add(shuffled[i]);
       }
-      // Fill remaining mines randomly
-      while (minePositions.size < mineCount) {
-        minePositions.add(Math.floor(Math.random() * GRID_SIZE));
+      while (minePositions.size < effectiveMineCount) {
+        minePositions.add(Math.floor(Math.random() * totalTiles));
       }
     } else {
-      // Normal random placement
-      while (minePositions.size < mineCount) {
-        minePositions.add(Math.floor(Math.random() * GRID_SIZE));
+      while (minePositions.size < effectiveMineCount) {
+        minePositions.add(Math.floor(Math.random() * totalTiles));
       }
     }
 
-    const newGrid = Array.from({ length: GRID_SIZE }, (_, i) => ({
+    const newGrid = Array.from({ length: totalTiles }, (_, i) => ({
       id: i,
       revealed: false,
       isMine: minePositions.has(i)
@@ -127,18 +121,15 @@ export const MinesGame = () => {
     setGrid(newGrid);
 
     if (tile.isMine) {
-      // Hit a mine - game over
       setGameOver(true);
       setGameActive(false);
       
-      // Reveal all mines
       const revealedGrid = newGrid.map(t => ({
         ...t,
         revealed: t.isMine ? true : t.revealed
       }));
       setGrid(revealedGrid);
 
-      // Log bet
       await supabase.from('bet_logs').insert({
         user_id: profile?.id,
         game: 'mines',
@@ -149,10 +140,9 @@ export const MinesGame = () => {
 
       toast.error("💥 BOOM! You hit a mine!");
     } else {
-      // Safe tile
       const newRevealed = revealedCount + 1;
       setRevealedCount(newRevealed);
-      const newMultiplier = calculateMultiplier(newRevealed, mineCount);
+      const newMultiplier = calculateMultiplier(newRevealed, effectiveMineCount, totalTiles);
       setCurrentMultiplier(newMultiplier);
     }
   };
@@ -163,7 +153,6 @@ export const MinesGame = () => {
     const payout = betAmount * currentMultiplier;
     await updateBalance(payout);
     
-    // Log win
     await supabase.from('bet_logs').insert({
       user_id: profile?.id,
       game: 'mines',
@@ -175,7 +164,6 @@ export const MinesGame = () => {
     triggerWinConfetti();
     toast.success(`Cashed out NPR ${payout.toFixed(2)}!`);
 
-    // Reveal all tiles
     setGrid(grid.map(t => ({ ...t, revealed: true })));
     setGameActive(false);
     setGameOver(true);
@@ -201,7 +189,13 @@ export const MinesGame = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-2 sm:p-6">
-          <div className="grid grid-cols-5 gap-1 sm:gap-2 max-w-xs sm:max-w-md mx-auto">
+          <div 
+            className="gap-1 sm:gap-2 max-w-xs sm:max-w-md mx-auto"
+            style={{ 
+              display: 'grid',
+              gridTemplateColumns: `repeat(${gridCols}, 1fr)`
+            }}
+          >
             {(gameActive || gameOver) ? (
               grid.map((tile, index) => (
                 <motion.button
@@ -241,7 +235,7 @@ export const MinesGame = () => {
                 </motion.button>
               ))
             ) : (
-              Array.from({ length: GRID_SIZE }).map((_, index) => (
+              Array.from({ length: totalTiles }).map((_, index) => (
                 <div
                   key={index}
                   className="aspect-square rounded-md sm:rounded-lg bg-muted/50 flex items-center justify-center"
@@ -290,6 +284,31 @@ export const MinesGame = () => {
             </div>
           </div>
 
+          {/* Grid Size */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2 text-sm sm:text-base">
+              <Grid3X3 className="w-4 h-4" />
+              Grid Size
+            </Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['small', 'medium', 'large'] as GridSize[]).map((size) => (
+                <Button
+                  key={size}
+                  variant={gridSize === size ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setGridSize(size);
+                    setMineCount(Math.min(mineCount, GRID_CONFIG[size].maxMines));
+                  }}
+                  disabled={gameActive}
+                  className="text-xs capitalize"
+                >
+                  {size} ({GRID_CONFIG[size].cols}x{GRID_CONFIG[size].cols})
+                </Button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label className="text-sm sm:text-base">Bet Amount (NPR)</Label>
             <Input
@@ -319,22 +338,22 @@ export const MinesGame = () => {
 
           <div className="space-y-2">
             <div className="flex justify-between text-sm sm:text-base">
-              <Label>Mines: {mineCount}</Label>
+              <Label>Mines: {effectiveMineCount}</Label>
               <span className="text-muted-foreground text-xs sm:text-sm">
                 Max: {maxPossibleMultiplier.toFixed(1)}x
               </span>
             </div>
             <Slider
-              value={[mineCount]}
+              value={[effectiveMineCount]}
               onValueChange={(v) => setMineCount(v[0])}
               min={1}
-              max={24}
+              max={maxMines}
               step={1}
               disabled={gameActive}
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>1 mine (Low risk)</span>
-              <span>24 mines (High risk)</span>
+              <span>{maxMines} mines (High risk)</span>
             </div>
           </div>
 
@@ -366,8 +385,7 @@ export const MinesGame = () => {
               <li>Click tiles to reveal diamonds</li>
               <li>Avoid the mines!</li>
               <li>Cash out anytime to secure winnings</li>
-              <li>More mines = higher multiplier</li>
-              <li>Starts at 1x, max {mineCount === 1 ? '24x' : `${(mineCount * 10)}x`}</li>
+              <li>More mines = higher multiplier (up to 1000x)</li>
             </ul>
           </div>
         </CardContent>

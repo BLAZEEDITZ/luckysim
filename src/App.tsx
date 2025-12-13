@@ -11,6 +11,7 @@ import GamePlayPage from "./pages/GamePlayPage";
 import AdminPage from "./pages/AdminPage";
 import WalletPage from "./pages/WalletPage";
 import ProfilePage from "./pages/ProfilePage";
+import LeaderboardPage from "./pages/LeaderboardPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/wallet" element={<WalletPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

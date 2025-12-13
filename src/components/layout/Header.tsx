@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { formatCredits } from "@/lib/gameUtils";
-import { Volume2, VolumeX, LogOut, Shield, Home, Wallet, Gamepad2 } from "lucide-react";
+import { Volume2, VolumeX, LogOut, Shield, Home, Wallet, Gamepad2, Trophy } from "lucide-react";
 import { useState } from "react";
 import logoImage from "@/assets/lucky-sim-logo.png";
 
@@ -62,6 +62,13 @@ export const Header = () => {
                 <Button variant="ghost" size="sm" className="px-2 sm:px-3">
                   <Gamepad2 className="w-4 h-4" />
                   <span className="hidden sm:inline ml-1">Games</span>
+                </Button>
+              </Link>
+
+              <Link to="/leaderboard">
+                <Button variant="ghost" size="sm" className="px-2 sm:px-3">
+                  <Trophy className="w-4 h-4" />
+                  <span className="hidden sm:inline ml-1">Leaderboard</span>
                 </Button>
               </Link>
 

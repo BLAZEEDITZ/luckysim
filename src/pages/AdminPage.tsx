@@ -385,7 +385,7 @@ const AdminPage = () => {
             </Card>
           </motion.div>
 
-          <div className="grid lg:grid-cols-2 gap-4 sm:gap-8">
+          <div className="grid lg:grid-cols-2 gap-4 sm:gap-8 mb-6 sm:mb-8">
             {/* Top Players */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -457,29 +457,46 @@ const AdminPage = () => {
                 <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
                   {betLogs.length > 0 ? (
                     <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                      {betLogs.slice(0, 10).map((log) => (
-                        <div 
-                          key={log.id}
-                          className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
-                              log.won 
-                                ? 'bg-secondary/20 text-secondary' 
-                                : 'bg-destructive/20 text-destructive'
-                            }`}>
-                              {log.won ? 'WIN' : 'LOSS'}
-                            </span>
-                            <span className="capitalize text-muted-foreground truncate">{log.game}</span>
+                      {betLogs.slice(0, 10).map((log) => {
+                        const player = profiles.find((p) => p.id === log.user_id);
+                        return (
+                          <div 
+                            key={log.id}
+                            className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
+                                log.won 
+                                  ? 'bg-secondary/20 text-secondary' 
+                                  : 'bg-destructive/20 text-destructive'
+                              }`}>
+                                {log.won ? 'WIN' : 'LOSS'}
+                              </span>
+                              {player?.avatar_url ? (
+                                <img 
+                                  src={player.avatar_url} 
+                                  alt="" 
+                                  className="w-6 h-6 rounded-full object-cover border border-border shrink-0"
+                                />
+                              ) : (
+                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
+                                  {(player?.display_name || player?.email || "U").slice(0, 1).toUpperCase()}
+                                </div>
+                              )}
+                              <span className="text-muted-foreground truncate">
+                                {player?.display_name || player?.email?.split("@")[0] || "Unknown"}
+                              </span>
+                              <span className="capitalize text-muted-foreground truncate">• {log.game}</span>
+                            </div>
+                            <div className="text-right shrink-0 ml-2">
+                              <span className="font-medium">NPR {log.bet_amount}</span>
+                              {log.won && (
+                                <span className="text-secondary ml-2">+NPR {log.payout}</span>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-right shrink-0 ml-2">
-                            <span className="font-medium">NPR {log.bet_amount}</span>
-                            {log.won && (
-                              <span className="text-secondary ml-2">+NPR {log.payout}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-center text-muted-foreground py-6 sm:py-8">
@@ -490,6 +507,63 @@ const AdminPage = () => {
               </Card>
             </motion.div>
           </div>
+
+          {/* All Users Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <Card className="border-primary/20">
+              <CardHeader className="border-b border-border/50 py-3 sm:py-4">
+                <CardTitle className="flex items-center gap-2 text-primary text-lg sm:text-xl">
+                  <Users className="w-5 h-5" />
+                  All Users ({profiles.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
+                {profiles.length > 0 ? (
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                    {profiles.map((player) => (
+                      <div 
+                        key={player.id}
+                        className="flex items-center justify-between p-3 bg-muted/30 rounded-xl"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {player.avatar_url ? (
+                            <img 
+                              src={player.avatar_url} 
+                              alt="" 
+                              className="w-8 h-8 rounded-full object-cover border border-border shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
+                              {(player.display_name || player.email || "U").slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">
+                              {player.display_name || player.email?.split('@')[0] || 'Anonymous'}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {player.email}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-semibold text-primary shrink-0 ml-2">
+                          NPR {formatCredits(player.balance)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-6 sm:py-8">
+                    No users yet
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
         </div>
       </main>
     </div>

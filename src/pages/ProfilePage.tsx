@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,8 +10,17 @@ import { Header } from "@/components/layout/Header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { formatCredits } from "@/lib/gameUtils";
 import { toast } from "sonner";
-import { User, Camera, Save, Coins, Calendar, Mail } from "lucide-react";
+import { User, Camera, Save, Coins, Calendar, Mail, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+interface BetLog {
+  id: string;
+  game: string;
+  bet_amount: number;
+  won: boolean;
+  payout: number;
+  created_at: string;
+}
 
 const ProfilePage = () => {
   const { user, profile, refreshProfile, loading } = useAuth();
@@ -19,7 +28,55 @@ const ProfilePage = () => {
   const [displayName, setDisplayName] = useState(profile?.display_name || "");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [betLogs, setBetLogs] = useState<BetLog[]>([]);
+  const [pnl, setPnl] = useState({ profit: 0, loss: 0, net: 0, totalBets: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (user) {
+      fetchUserBets();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (profile?.display_name) {
+      setDisplayName(profile.display_name);
+    }
+  }, [profile?.display_name]);
+
+  const fetchUserBets = async () => {
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("bet_logs")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (data) {
+      setBetLogs(data);
+
+      // Calculate PnL
+      let profit = 0;
+      let loss = 0;
+
+      data.forEach((log) => {
+        if (log.won) {
+          profit += Number(log.payout) - Number(log.bet_amount);
+        } else {
+          loss += Number(log.bet_amount);
+        }
+      });
+
+      setPnl({
+        profit,
+        loss,
+        net: profit - loss,
+        totalBets: data.length,
+      });
+    }
+  };
 
   if (!loading && !user) {
     navigate("/auth");
@@ -30,7 +87,6 @@ const ProfilePage = () => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    // Validate file
     if (!file.type.startsWith("image/")) {
       toast.error("Please upload an image file");
       return;
@@ -126,7 +182,7 @@ const ProfilePage = () => {
       <Header />
 
       <main className="pt-20 sm:pt-24 pb-8 sm:pb-12 px-2 sm:px-4">
-        <div className="container mx-auto max-w-2xl">
+        <div className="container mx-auto max-w-3xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -157,7 +213,6 @@ const ProfilePage = () => {
                   <CardTitle className="text-lg sm:text-xl">Profile Info</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6 p-4 sm:p-6">
-                  {/* Avatar */}
                   <div className="flex flex-col items-center gap-4">
                     <div className="relative">
                       <Avatar className="w-24 h-24 sm:w-32 sm:h-32 border-4 border-primary/30">
@@ -188,7 +243,6 @@ const ProfilePage = () => {
                     )}
                   </div>
 
-                  {/* Display Name */}
                   <div className="space-y-2">
                     <Label htmlFor="displayName">Display Name</Label>
                     <Input
@@ -212,6 +266,50 @@ const ProfilePage = () => {
                     <Save className="w-4 h-4 mr-2" />
                     {saving ? "Saving..." : "Save Changes"}
                   </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* PnL Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+            >
+              <Card className="border-accent/20">
+                <CardHeader className="py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <BarChart3 className="w-5 h-5 text-accent" />
+                    Profit & Loss
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 bg-secondary/10 rounded-xl text-center">
+                      <TrendingUp className="w-5 h-5 text-secondary mx-auto mb-1" />
+                      <p className="text-xs text-muted-foreground">Profit</p>
+                      <p className="font-bold text-secondary">
+                        NPR {formatCredits(pnl.profit)}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-destructive/10 rounded-xl text-center">
+                      <TrendingDown className="w-5 h-5 text-destructive mx-auto mb-1" />
+                      <p className="text-xs text-muted-foreground">Loss</p>
+                      <p className="font-bold text-destructive">
+                        NPR {formatCredits(pnl.loss)}
+                      </p>
+                    </div>
+                    <div className={`p-3 rounded-xl text-center ${pnl.net >= 0 ? 'bg-secondary/10' : 'bg-destructive/10'}`}>
+                      <BarChart3 className={`w-5 h-5 mx-auto mb-1 ${pnl.net >= 0 ? 'text-secondary' : 'text-destructive'}`} />
+                      <p className="text-xs text-muted-foreground">Net P&L</p>
+                      <p className={`font-bold ${pnl.net >= 0 ? 'text-secondary' : 'text-destructive'}`}>
+                        {pnl.net >= 0 ? '+' : ''}NPR {formatCredits(pnl.net)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center mt-3">
+                    Based on last {pnl.totalBets} bets
+                  </p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -266,6 +364,60 @@ const ProfilePage = () => {
                       </p>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Recent Bets */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+            >
+              <Card className="border-accent/20">
+                <CardHeader className="py-3 sm:py-4">
+                  <CardTitle className="text-lg sm:text-xl">
+                    My Recent Bets
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 sm:p-6">
+                  {betLogs.length > 0 ? (
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {betLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
+                                log.won
+                                  ? "bg-secondary/20 text-secondary"
+                                  : "bg-destructive/20 text-destructive"
+                              }`}
+                            >
+                              {log.won ? "WIN" : "LOSS"}
+                            </span>
+                            <span className="capitalize text-muted-foreground truncate">
+                              {log.game}
+                            </span>
+                          </div>
+                          <div className="text-right shrink-0 ml-2">
+                            <span className="font-medium">NPR {log.bet_amount}</span>
+                            {log.won && (
+                              <span className="text-secondary ml-2">
+                                +NPR {log.payout}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-6">
+                      No bets yet. Start playing to see your history!
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
