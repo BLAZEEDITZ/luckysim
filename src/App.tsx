@@ -10,6 +10,7 @@ import GamesPage from "./pages/GamesPage";
 import GamePlayPage from "./pages/GamePlayPage";
 import AdminPage from "./pages/AdminPage";
 import WalletPage from "./pages/WalletPage";
+import ProfilePage from "./pages/ProfilePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/games/:gameId" element={<GamePlayPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/wallet" element={<WalletPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

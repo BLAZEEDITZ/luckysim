@@ -6,32 +6,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getWinProbability } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { Circle, Zap, Shield, Flame } from "lucide-react";
 
 type RiskLevel = 'low' | 'medium' | 'high';
+type RowCount = 8 | 12 | 16;
 
-// Multipliers for each risk level - edge buckets have highest multipliers
-const MULTIPLIER_SETS: Record<RiskLevel, number[]> = {
-  low: [5.6, 2.1, 1.1, 1, 0.5, 0.3, 0.5, 1, 1.1, 2.1, 5.6],
-  medium: [25, 8, 3, 1.5, 0.5, 0.2, 0.5, 1.5, 3, 8, 25],
-  high: [1000, 130, 26, 9, 4, 0.2, 4, 9, 26, 130, 1000]
+// Multipliers for each risk level and row count
+const MULTIPLIER_SETS: Record<RowCount, Record<RiskLevel, number[]>> = {
+  8: {
+    low: [5.6, 2.1, 1.1, 1, 0.5, 1, 1.1, 2.1, 5.6],
+    medium: [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13],
+    high: [29, 4, 1.5, 0.3, 0.2, 0.3, 1.5, 4, 29]
+  },
+  12: {
+    low: [8.4, 3, 1.4, 1.1, 1, 0.5, 0.5, 1, 1.1, 1.4, 3, 8.4],
+    medium: [33, 11, 4, 2, 1.1, 0.6, 0.6, 1.1, 2, 4, 11, 33],
+    high: [170, 24, 8.1, 2, 0.7, 0.2, 0.2, 0.7, 2, 8.1, 24, 170]
+  },
+  16: {
+    low: [16, 9, 2, 1.4, 1.1, 1, 0.5, 0.3, 0.3, 0.5, 1, 1.1, 1.4, 2, 9, 16],
+    medium: [110, 41, 10, 5, 3, 1.5, 1, 0.5, 0.5, 1, 1.5, 3, 5, 10, 41, 110],
+    high: [1000, 130, 26, 9, 4, 2, 0.2, 0.2, 0.2, 0.2, 2, 4, 9, 26, 130, 1000]
+  }
 };
 
 const RISK_CONFIG: Record<RiskLevel, { label: string; icon: React.ElementType; color: string }> = {
-  low: { label: 'Low Risk', icon: Shield, color: 'text-secondary' },
-  medium: { label: 'Medium Risk', icon: Zap, color: 'text-amber-400' },
-  high: { label: 'High Risk', icon: Flame, color: 'text-destructive' }
+  low: { label: 'Low', icon: Shield, color: 'text-secondary' },
+  medium: { label: 'Medium', icon: Zap, color: 'text-amber-400' },
+  high: { label: 'High', icon: Flame, color: 'text-destructive' }
 };
-
-const ROWS = 10;
-
-interface Ball {
-  id: number;
-  x: number;
-  y: number;
-}
 
 interface BallPath {
   id: number;
@@ -43,40 +48,42 @@ export const PlinkoGame = () => {
   const { profile, updateBalance, refreshProfile } = useAuth();
   const [betAmount, setBetAmount] = useState(10);
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
+  const [rowCount, setRowCount] = useState<RowCount>(12);
   const [ballPaths, setBallPaths] = useState<BallPath[]>([]);
   const [dropping, setDropping] = useState(false);
   const [lastMultiplier, setLastMultiplier] = useState<number | null>(null);
   const [lastBucketIndex, setLastBucketIndex] = useState<number | null>(null);
   const ballIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 360, height: 420 });
+  const [dimensions, setDimensions] = useState({ width: 400, height: 500 });
 
-  const multipliers = MULTIPLIER_SETS[riskLevel];
+  const multipliers = MULTIPLIER_SETS[rowCount][riskLevel];
 
   // Responsive sizing
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
-        const width = Math.min(containerRef.current.offsetWidth - 16, 380);
-        setDimensions({ width, height: Math.floor(width * 1.15) });
+        const width = Math.min(containerRef.current.offsetWidth - 16, 450);
+        const heightMultiplier = rowCount === 16 ? 1.4 : rowCount === 12 ? 1.25 : 1.1;
+        setDimensions({ width, height: Math.floor(width * heightMultiplier) });
       }
     };
     updateDimensions();
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
-  }, []);
+  }, [rowCount]);
 
   const { width: boardWidth, height: boardHeight } = dimensions;
-  const pegSpacing = boardWidth / (ROWS + 3);
-  const startY = 35;
-  const endY = boardHeight - 55;
-  const rowHeight = (endY - startY) / ROWS;
+  const pegSpacing = boardWidth / (rowCount + 4);
+  const startY = 40;
+  const endY = boardHeight - 60;
+  const rowHeight = (endY - startY) / rowCount;
 
   // Calculate peg positions
   const getPegPositions = useCallback(() => {
     const pegs: { x: number; y: number; row: number; col: number }[] = [];
 
-    for (let row = 0; row < ROWS; row++) {
+    for (let row = 0; row < rowCount; row++) {
       const pegCount = row + 3;
       const rowWidth = (pegCount - 1) * pegSpacing;
       const startX = (boardWidth - rowWidth) / 2;
@@ -92,55 +99,76 @@ export const PlinkoGame = () => {
       }
     }
     return pegs;
-  }, [boardWidth, pegSpacing, rowHeight]);
+  }, [boardWidth, pegSpacing, rowHeight, rowCount]);
 
-  // Pre-calculate ball path using deterministic simulation
-  const generateBallPath = useCallback(() => {
+  // Pre-calculate ball path - controlled by win probability
+  const generateBallPath = useCallback(async () => {
     const positions: { x: number; y: number }[] = [];
     let currentX = boardWidth / 2;
+    
+    // Get win probability from admin settings
+    const winProb = await getWinProbability();
+    const shouldWin = Math.random() < winProb;
+    
+    // Determine target bucket based on win/loss
+    let targetBucketIndex: number;
+    if (shouldWin) {
+      // Pick a bucket with multiplier >= 1
+      const winningBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m >= 1);
+      const pick = winningBuckets[Math.floor(Math.random() * winningBuckets.length)];
+      targetBucketIndex = pick.i;
+    } else {
+      // Pick a bucket with multiplier < 1
+      const losingBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m < 1);
+      if (losingBuckets.length > 0) {
+        const pick = losingBuckets[Math.floor(Math.random() * losingBuckets.length)];
+        targetBucketIndex = pick.i;
+      } else {
+        // No losing buckets, pick center (lowest)
+        targetBucketIndex = Math.floor(multipliers.length / 2);
+      }
+    }
+    
+    // Calculate target X position for that bucket
+    const bucketWidth = (boardWidth - 20) / multipliers.length;
+    const targetX = 10 + (targetBucketIndex + 0.5) * bucketWidth;
     
     // Start position
     positions.push({ x: currentX, y: 10 });
     
-    // Simulate each row
-    for (let row = 0; row < ROWS; row++) {
-      const pegCount = row + 3;
-      const rowWidth = (pegCount - 1) * pegSpacing;
-      const startX = (boardWidth - rowWidth) / 2;
+    // Simulate path that leads towards target
+    for (let row = 0; row < rowCount; row++) {
       const y = startY + row * rowHeight;
-      
-      // Ball goes left or right randomly
-      const goRight = Math.random() > 0.5;
       const halfSpacing = pegSpacing / 2;
       
-      // Add bounce effect - go to peg first
+      // Bias movement towards target
+      const distanceToTarget = targetX - currentX;
+      const bias = distanceToTarget > 0 ? 0.6 : 0.4;
+      const goRight = Math.random() < bias;
+      
+      // Add bounce effect
       positions.push({ x: currentX, y: y - 5 });
       
-      // Then deflect
+      // Deflect with some randomness
       if (goRight) {
-        currentX += halfSpacing + (Math.random() * 4 - 2);
+        currentX += halfSpacing + (Math.random() * 3 - 1.5);
       } else {
-        currentX -= halfSpacing + (Math.random() * 4 - 2);
+        currentX -= halfSpacing + (Math.random() * 3 - 1.5);
       }
       
       // Clamp to board bounds
-      currentX = Math.max(25, Math.min(boardWidth - 25, currentX));
+      currentX = Math.max(30, Math.min(boardWidth - 30, currentX));
       
       // Position after bounce
       positions.push({ x: currentX, y: y + rowHeight * 0.6 });
     }
     
-    // Determine final bucket
-    const bucketWidth = (boardWidth - 20) / multipliers.length;
-    let bucketIndex = Math.floor((currentX - 10) / bucketWidth);
-    bucketIndex = Math.max(0, Math.min(multipliers.length - 1, bucketIndex));
-    
-    // Final position centered in bucket
-    const finalX = 10 + (bucketIndex + 0.5) * bucketWidth;
+    // Snap to target bucket at the end
+    const finalX = 10 + (targetBucketIndex + 0.5) * bucketWidth;
     positions.push({ x: finalX, y: endY + 15 });
     
-    return { positions, bucketIndex };
-  }, [boardWidth, pegSpacing, rowHeight, multipliers.length, startY, endY]);
+    return { positions, bucketIndex: targetBucketIndex };
+  }, [boardWidth, pegSpacing, rowHeight, multipliers, startY, endY, rowCount]);
 
   // Animate ball along pre-calculated path
   const animateBall = useCallback((path: { x: number; y: number }[], ballId: number): Promise<void> => {
@@ -185,7 +213,7 @@ export const PlinkoGame = () => {
     setLastBucketIndex(null);
 
     const ballId = ++ballIdRef.current;
-    const { positions, bucketIndex } = generateBallPath();
+    const { positions, bucketIndex } = await generateBallPath();
     
     // Animate ball
     await animateBall(positions, ballId);
@@ -344,6 +372,24 @@ export const PlinkoGame = () => {
             </span>
           </div>
 
+          {/* Row Count Selection */}
+          <div className="space-y-2">
+            <Label className="text-sm sm:text-base">Rows</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {([8, 12, 16] as RowCount[]).map((rows) => (
+                <Button
+                  key={rows}
+                  variant={rowCount === rows ? 'gold' : 'outline'}
+                  size="sm"
+                  onClick={() => setRowCount(rows)}
+                  disabled={dropping}
+                >
+                  {rows}
+                </Button>
+              ))}
+            </div>
+          </div>
+
           {/* Risk Level Selection */}
           <div className="space-y-2">
             <Label className="text-sm sm:text-base">Risk Level</Label>
@@ -363,13 +409,13 @@ export const PlinkoGame = () => {
                     className={`flex flex-col items-center gap-1 h-auto py-2 ${isActive ? '' : config.color}`}
                   >
                     <Icon className="w-4 h-4" />
-                    <span className="text-[10px] sm:text-xs">{level.charAt(0).toUpperCase() + level.slice(1)}</span>
+                    <span className="text-[10px] sm:text-xs">{config.label}</span>
                   </Button>
                 );
               })}
             </div>
             <p className="text-xs text-muted-foreground text-center">
-              {riskLevel === 'high' ? 'Max: 1000x multiplier!' : riskLevel === 'medium' ? 'Max: 25x multiplier' : 'Max: 5.6x multiplier'}
+              Max: {Math.max(...multipliers)}x multiplier
             </p>
           </div>
 
