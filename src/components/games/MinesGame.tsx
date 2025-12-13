@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getWinProbability } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { Bomb, Diamond, Coins, RotateCcw } from "lucide-react";
 
@@ -60,6 +60,10 @@ export const MinesGame = () => {
     return calculateMultiplier(safeSpots, mineCount);
   }, [mineCount, calculateMultiplier]);
 
+  // Track if player should win based on admin probability
+  const [shouldPlayerWin, setShouldPlayerWin] = useState(true);
+  const [winProbLoaded, setWinProbLoaded] = useState(false);
+
   const startGame = async () => {
     if (!profile || betAmount > profile.balance) {
       toast.error("Insufficient balance!");
@@ -71,13 +75,34 @@ export const MinesGame = () => {
       return;
     }
 
+    // Get win probability from admin settings
+    const winProb = await getWinProbability();
+    const shouldWin = Math.random() < winProb;
+    setShouldPlayerWin(shouldWin);
+    setWinProbLoaded(true);
+
     // Deduct bet
     await updateBalance(-betAmount);
 
-    // Generate mines
+    // Generate mines - if player shouldn't win, place more strategically
     const minePositions = new Set<number>();
-    while (minePositions.size < mineCount) {
-      minePositions.add(Math.floor(Math.random() * GRID_SIZE));
+    
+    if (!shouldWin) {
+      // Force early mine hit - place mines in first few tiles player is likely to click
+      const earlyPositions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+      const shuffled = earlyPositions.sort(() => Math.random() - 0.5);
+      for (let i = 0; i < Math.min(mineCount, shuffled.length); i++) {
+        minePositions.add(shuffled[i]);
+      }
+      // Fill remaining mines randomly
+      while (minePositions.size < mineCount) {
+        minePositions.add(Math.floor(Math.random() * GRID_SIZE));
+      }
+    } else {
+      // Normal random placement
+      while (minePositions.size < mineCount) {
+        minePositions.add(Math.floor(Math.random() * GRID_SIZE));
+      }
     }
 
     const newGrid = Array.from({ length: GRID_SIZE }, (_, i) => ({

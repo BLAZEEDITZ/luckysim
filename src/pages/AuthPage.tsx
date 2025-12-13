@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Header } from "@/components/layout/Header";
-import { Disclaimer } from "@/components/layout/Disclaimer";
 import { toast } from "sonner";
 import { Mail, Lock, ArrowRight, Gift } from "lucide-react";
 

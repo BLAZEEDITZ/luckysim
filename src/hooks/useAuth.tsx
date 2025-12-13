@@ -8,6 +8,8 @@ interface Profile {
   balance: number;
   created_at: string;
   updated_at: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
 }
 
 interface AuthContextType {

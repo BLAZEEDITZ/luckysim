@@ -110,7 +110,7 @@ const GamesPage = () => {
                 <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-card to-card/80 rounded-2xl border border-primary/30 hover:border-primary transition-colors cursor-pointer shadow-lg">
                   <Coins className="w-6 h-6 text-primary" />
                   <span className="text-lg font-semibold">
-                    Balance: <span className="text-primary font-bold">${formatCredits(profile?.balance ?? 0)}</span>
+                    Balance: <span className="text-primary font-bold">NPR {formatCredits(profile?.balance ?? 0)}</span>
                   </span>
                 </div>
               </Link>
@@ -151,8 +151,8 @@ const GamesPage = () => {
                     <p className="text-muted-foreground">{game.description}</p>
                     
                     <div className="flex justify-between text-sm text-muted-foreground border-t border-border/50 pt-4">
-                      <span>Min: ${game.minBet}</span>
-                      <span>Max: ${game.maxBet}</span>
+                      <span>Min: NPR {game.minBet}</span>
+                      <span>Max: NPR {game.maxBet}</span>
                     </div>
                     
                     <Link to={`/games/${game.id}`}>

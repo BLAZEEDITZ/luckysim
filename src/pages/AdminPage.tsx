@@ -40,6 +40,8 @@ interface Profile {
   email: string;
   balance: number;
   created_at: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
 }
 
 interface BetLog {
@@ -409,7 +411,20 @@ const AdminPage = () => {
                             <span className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-sm font-bold text-primary border border-primary/30 shrink-0">
                               {index + 1}
                             </span>
-                            <span className="text-sm truncate">{player.email}</span>
+                            {player.avatar_url ? (
+                              <img 
+                                src={player.avatar_url} 
+                                alt="" 
+                                className="w-8 h-8 rounded-full object-cover border border-border shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-secondary/30 to-secondary/10 flex items-center justify-center text-xs font-bold text-secondary border border-secondary/30 shrink-0">
+                                {(player.display_name || player.email || "U").slice(0, 2).toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-sm truncate">
+                              {player.display_name || player.email?.split('@')[0] || 'Anonymous'}
+                            </span>
                           </div>
                           <span className="font-semibold text-primary shrink-0 ml-2">
                             NPR {formatCredits(player.balance)}

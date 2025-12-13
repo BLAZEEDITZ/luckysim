@@ -255,15 +255,8 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Disclaimer */}
-        <section className="py-6 sm:py-8 border-t border-border/50">
-          <div className="container mx-auto px-4">
-            <p className="text-center text-xs sm:text-sm text-muted-foreground max-w-2xl mx-auto">
-              ⚠️ <strong>Simulated game for educational use only</strong> – no real money involved. 
-              This platform is for entertainment purposes and does not offer real gambling services.
-            </p>
-          </div>
-        </section>
+        {/* Footer spacing */}
+        <div className="py-4" />
       </main>
     </div>
   );

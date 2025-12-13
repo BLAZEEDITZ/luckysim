@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { formatCredits } from "@/lib/gameUtils";
 import { Volume2, VolumeX, LogOut, Shield, Home, Wallet, Gamepad2 } from "lucide-react";
 import { useState } from "react";
@@ -12,6 +13,16 @@ export const Header = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   const toggleSound = () => setSoundEnabled(!soundEnabled);
+
+  const getInitials = () => {
+    if (profile?.display_name) {
+      return profile.display_name.slice(0, 2).toUpperCase();
+    }
+    if (profile?.email) {
+      return profile.email.slice(0, 2).toUpperCase();
+    }
+    return "U";
+  };
 
   return (
     <motion.header
@@ -76,6 +87,16 @@ export const Header = () => {
                     NPR {formatCredits(profile?.balance ?? 0)}
                   </span>
                 </div>
+              </Link>
+
+              {/* Profile Avatar */}
+              <Link to="/profile">
+                <Avatar className="w-8 h-8 sm:w-9 sm:h-9 border-2 border-primary/30 hover:border-primary transition-colors cursor-pointer">
+                  <AvatarImage src={profile?.avatar_url || ""} />
+                  <AvatarFallback className="bg-gradient-to-br from-primary/30 to-primary/10 text-xs font-bold text-primary">
+                    {getInitials()}
+                  </AvatarFallback>
+                </Avatar>
               </Link>
 
               <Button
