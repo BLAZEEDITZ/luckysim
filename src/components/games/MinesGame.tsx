@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti, checkWin } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { Bomb, Diamond, Coins, RotateCcw } from "lucide-react";
 
@@ -21,22 +21,44 @@ interface Tile {
 
 export const MinesGame = () => {
   const { profile, updateBalance, refreshProfile } = useAuth();
-  const [betAmount, setBetAmount] = useState(1);
-  const [mineCount, setMineCount] = useState(5);
+  const [betAmount, setBetAmount] = useState(10);
+  const [mineCount, setMineCount] = useState(3);
   const [grid, setGrid] = useState<Tile[]>([]);
   const [gameActive, setGameActive] = useState(false);
   const [currentMultiplier, setCurrentMultiplier] = useState(1);
   const [revealedCount, setRevealedCount] = useState(0);
   const [gameOver, setGameOver] = useState(false);
 
+  // Calculate multiplier based on mines and revealed tiles
+  // Starts at 1x, scales up based on risk
   const calculateMultiplier = useCallback((revealed: number, mines: number) => {
+    if (revealed === 0) return 1;
+    
     const safeSpots = GRID_SIZE - mines;
     let multiplier = 1;
+    
+    // Calculate probability-based multiplier
     for (let i = 0; i < revealed; i++) {
-      multiplier *= safeSpots / (safeSpots - i);
+      const remainingSafe = safeSpots - i;
+      const remainingTotal = GRID_SIZE - i;
+      multiplier *= remainingTotal / remainingSafe;
     }
-    return Math.min(multiplier * 0.97, 100); // House edge + cap
+    
+    // Apply house edge (3%)
+    multiplier *= 0.97;
+    
+    // Scale based on mine count - more mines = higher max multiplier
+    // With 1 mine: max ~24x, with 24 mines: max ~1000x
+    const maxMultiplier = mines === 1 ? 24 : mines * 10;
+    
+    return Math.min(multiplier, maxMultiplier);
   }, []);
+
+  // Calculate max possible multiplier for display
+  const maxPossibleMultiplier = useMemo(() => {
+    const safeSpots = GRID_SIZE - mineCount;
+    return calculateMultiplier(safeSpots, mineCount);
+  }, [mineCount, calculateMultiplier]);
 
   const startGame = async () => {
     if (!profile || betAmount > profile.balance) {
@@ -45,7 +67,7 @@ export const MinesGame = () => {
     }
 
     if (betAmount < 1) {
-      toast.error("Minimum bet is $1");
+      toast.error("Minimum bet is NPR 1");
       return;
     }
 
@@ -126,7 +148,7 @@ export const MinesGame = () => {
     });
 
     triggerWinConfetti();
-    toast.success(`Cashed out $${payout.toFixed(2)}!`);
+    toast.success(`Cashed out NPR ${payout.toFixed(2)}!`);
 
     // Reveal all tiles
     setGrid(grid.map(t => ({ ...t, revealed: true })));
@@ -144,17 +166,17 @@ export const MinesGame = () => {
   };
 
   return (
-    <div className="grid lg:grid-cols-3 gap-6">
+    <div className="grid lg:grid-cols-3 gap-3 sm:gap-6">
       {/* Game Board */}
       <Card className="lg:col-span-2" glow="emerald">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-gradient-gold font-display">
-            <Bomb className="w-6 h-6" />
+        <CardHeader className="py-3 sm:py-4">
+          <CardTitle className="flex items-center gap-2 text-gradient-gold font-display text-lg sm:text-xl">
+            <Bomb className="w-5 h-5 sm:w-6 sm:h-6" />
             Mines
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-5 gap-2 max-w-md mx-auto">
+        <CardContent className="p-2 sm:p-6">
+          <div className="grid grid-cols-5 gap-1 sm:gap-2 max-w-xs sm:max-w-md mx-auto">
             {(gameActive || gameOver) ? (
               grid.map((tile, index) => (
                 <motion.button
@@ -165,7 +187,7 @@ export const MinesGame = () => {
                   onClick={() => revealTile(index)}
                   disabled={!gameActive || tile.revealed}
                   className={`
-                    aspect-square rounded-lg flex items-center justify-center text-2xl
+                    aspect-square rounded-md sm:rounded-lg flex items-center justify-center text-lg sm:text-2xl
                     transition-all duration-200
                     ${tile.revealed 
                       ? tile.isMine 
@@ -184,9 +206,9 @@ export const MinesGame = () => {
                         exit={{ scale: 0 }}
                       >
                         {tile.isMine ? (
-                          <Bomb className="w-8 h-8 text-destructive-foreground" />
+                          <Bomb className="w-5 h-5 sm:w-8 sm:h-8 text-destructive-foreground" />
                         ) : (
-                          <Diamond className="w-8 h-8 text-secondary-foreground" />
+                          <Diamond className="w-5 h-5 sm:w-8 sm:h-8 text-secondary-foreground" />
                         )}
                       </motion.div>
                     )}
@@ -197,30 +219,31 @@ export const MinesGame = () => {
               Array.from({ length: GRID_SIZE }).map((_, index) => (
                 <div
                   key={index}
-                  className="aspect-square rounded-lg bg-muted/50 flex items-center justify-center"
+                  className="aspect-square rounded-md sm:rounded-lg bg-muted/50 flex items-center justify-center"
                 >
-                  <span className="text-muted-foreground text-2xl">?</span>
+                  <span className="text-muted-foreground text-lg sm:text-2xl">?</span>
                 </div>
               ))
             )}
           </div>
 
           {gameActive && (
-            <div className="mt-6 text-center">
-              <div className="text-3xl font-display font-bold text-secondary mb-4">
+            <div className="mt-4 sm:mt-6 text-center">
+              <div className="text-2xl sm:text-3xl font-display font-bold text-secondary mb-2 sm:mb-4">
                 {currentMultiplier.toFixed(2)}x
               </div>
-              <div className="text-muted-foreground mb-4">
-                Potential win: ${(betAmount * currentMultiplier).toFixed(2)}
+              <div className="text-muted-foreground text-sm sm:text-base mb-3 sm:mb-4">
+                Potential win: NPR {(betAmount * currentMultiplier).toFixed(2)}
               </div>
               <Button 
                 variant="emerald" 
                 size="lg" 
                 onClick={cashOut}
                 disabled={revealedCount === 0}
+                className="text-sm sm:text-base"
               >
-                <Coins className="w-5 h-5 mr-2" />
-                Cash Out ${(betAmount * currentMultiplier).toFixed(2)}
+                <Coins className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                Cash Out NPR {(betAmount * currentMultiplier).toFixed(2)}
               </Button>
             </div>
           )}
@@ -229,21 +252,21 @@ export const MinesGame = () => {
 
       {/* Controls */}
       <Card glow="gold">
-        <CardHeader>
-          <CardTitle className="font-display">Game Settings</CardTitle>
+        <CardHeader className="py-3 sm:py-4">
+          <CardTitle className="font-display text-lg sm:text-xl">Game Settings</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4 sm:space-y-6 p-3 sm:p-6">
           <div className="space-y-2">
-            <div className="flex justify-between">
+            <div className="flex justify-between text-sm sm:text-base">
               <Label>Balance</Label>
               <span className="text-primary font-semibold">
-                ${formatCredits(profile?.balance ?? 0)}
+                NPR {formatCredits(profile?.balance ?? 0)}
               </span>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Bet Amount ($)</Label>
+            <Label className="text-sm sm:text-base">Bet Amount (NPR)</Label>
             <Input
               type="number"
               min={1}
@@ -251,28 +274,29 @@ export const MinesGame = () => {
               value={betAmount}
               onChange={(e) => setBetAmount(Number(e.target.value))}
               disabled={gameActive}
+              className="text-sm sm:text-base"
             />
-            <div className="flex gap-2">
-              {[1, 5, 10, 25].map((amount) => (
+            <div className="grid grid-cols-4 gap-1 sm:gap-2">
+              {[10, 50, 100, 500].map((amount) => (
                 <Button
                   key={amount}
                   variant="outline"
                   size="sm"
                   onClick={() => setBetAmount(amount)}
                   disabled={gameActive}
-                  className="flex-1"
+                  className="text-xs sm:text-sm px-1"
                 >
-                  ${amount}
+                  {amount}
                 </Button>
               ))}
             </div>
           </div>
 
           <div className="space-y-2">
-            <div className="flex justify-between">
+            <div className="flex justify-between text-sm sm:text-base">
               <Label>Mines: {mineCount}</Label>
-              <span className="text-muted-foreground text-sm">
-                Safe tiles: {GRID_SIZE - mineCount}
+              <span className="text-muted-foreground text-xs sm:text-sm">
+                Max: {maxPossibleMultiplier.toFixed(1)}x
               </span>
             </div>
             <Slider
@@ -283,13 +307,17 @@ export const MinesGame = () => {
               step={1}
               disabled={gameActive}
             />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>1 mine (Low risk)</span>
+              <span>24 mines (High risk)</span>
+            </div>
           </div>
 
           {!gameActive && !gameOver ? (
             <Button 
               variant="gold" 
               size="lg" 
-              className="w-full" 
+              className="w-full text-sm sm:text-base" 
               onClick={startGame}
               disabled={!profile || betAmount > profile.balance}
             >
@@ -299,7 +327,7 @@ export const MinesGame = () => {
             <Button 
               variant="outline" 
               size="lg" 
-              className="w-full" 
+              className="w-full text-sm sm:text-base" 
               onClick={resetGame}
             >
               <RotateCcw className="w-4 h-4 mr-2" />
@@ -307,13 +335,14 @@ export const MinesGame = () => {
             </Button>
           )}
 
-          <div className="p-4 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+          <div className="p-3 sm:p-4 bg-muted/50 rounded-lg text-xs sm:text-sm text-muted-foreground">
             <p className="font-semibold mb-2">How to Play:</p>
             <ul className="list-disc list-inside space-y-1">
               <li>Click tiles to reveal diamonds</li>
               <li>Avoid the mines!</li>
-              <li>Cash out anytime to secure your winnings</li>
+              <li>Cash out anytime to secure winnings</li>
               <li>More mines = higher multiplier</li>
+              <li>Starts at 1x, max {mineCount === 1 ? '24x' : `${(mineCount * 10)}x`}</li>
             </ul>
           </div>
         </CardContent>
