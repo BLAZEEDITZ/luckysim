@@ -165,15 +165,19 @@ const AdminPage = () => {
     }
   };
 
+  const [processingTx, setProcessingTx] = useState<string | null>(null);
+  const [editingBalance, setEditingBalance] = useState<string | null>(null);
+  const [newBalance, setNewBalance] = useState<number>(0);
+
   const handleApproveTransaction = async (tx: Transaction) => {
+    if (processingTx === tx.id) return; // Prevent double-click
+    setProcessingTx(tx.id);
     try {
-      // Update transaction status
       await supabase
         .from('transactions')
         .update({ status: 'completed' })
         .eq('id', tx.id);
 
-      // Update user balance
       const balanceChange = tx.type === 'deposit' ? tx.amount : -tx.amount;
       await supabase.rpc('update_balance', {
         _user_id: tx.user_id,
@@ -184,10 +188,28 @@ const AdminPage = () => {
       fetchData();
     } catch (error) {
       toast.error("Failed to approve transaction");
+    } finally {
+      setProcessingTx(null);
+    }
+  };
+
+  const handleUpdateUserBalance = async (userId: string, balance: number) => {
+    try {
+      await supabase
+        .from('profiles')
+        .update({ balance })
+        .eq('id', userId);
+      toast.success("Balance updated!");
+      setEditingBalance(null);
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to update balance");
     }
   };
 
   const handleRejectTransaction = async (tx: Transaction) => {
+    if (processingTx === tx.id) return;
+    setProcessingTx(tx.id);
     try {
       await supabase
         .from('transactions')
@@ -198,6 +220,8 @@ const AdminPage = () => {
       fetchData();
     } catch (error) {
       toast.error("Failed to reject transaction");
+    } finally {
+      setProcessingTx(null);
     }
   };
 
@@ -361,19 +385,21 @@ const AdminPage = () => {
                               variant="emerald"
                               size="sm"
                               onClick={() => handleApproveTransaction(tx)}
+                              disabled={processingTx === tx.id}
                               className="text-xs sm:text-sm"
                             >
                               <CheckCircle className="w-4 h-4 sm:mr-1" />
-                              <span className="hidden sm:inline">Approve</span>
+                              <span className="hidden sm:inline">{processingTx === tx.id ? '...' : 'Approve'}</span>
                             </Button>
                             <Button
                               variant="destructive"
                               size="sm"
                               onClick={() => handleRejectTransaction(tx)}
+                              disabled={processingTx === tx.id}
                               className="text-xs sm:text-sm"
                             >
                               <XCircle className="w-4 h-4 sm:mr-1" />
-                              <span className="hidden sm:inline">Reject</span>
+                              <span className="hidden sm:inline">{processingTx === tx.id ? '...' : 'Reject'}</span>
                             </Button>
                           </div>
                         </div>
@@ -550,9 +576,30 @@ const AdminPage = () => {
                             </p>
                           </div>
                         </div>
-                        <span className="font-semibold text-primary shrink-0 ml-2">
-                          NPR {formatCredits(player.balance)}
-                        </span>
+                        {editingBalance === player.id ? (
+                          <div className="flex items-center gap-1 shrink-0 ml-2">
+                            <Input
+                              type="number"
+                              value={newBalance}
+                              onChange={(e) => setNewBalance(Number(e.target.value))}
+                              className="w-24 h-8 text-sm"
+                              autoFocus
+                            />
+                            <Button size="sm" variant="emerald" onClick={() => handleUpdateUserBalance(player.id, newBalance)}>
+                              <Save className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingBalance(null)}>
+                              <XCircle className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span 
+                            className="font-semibold text-primary shrink-0 ml-2 cursor-pointer hover:underline"
+                            onClick={() => { setEditingBalance(player.id); setNewBalance(player.balance); }}
+                          >
+                            NPR {formatCredits(player.balance)}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

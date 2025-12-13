@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { 
   triggerWinConfetti, 
   formatCredits,
@@ -11,8 +12,11 @@ import {
   SLOT_SYMBOLS,
   getWinProbability
 } from "@/lib/gameUtils";
-import { Coins, RotateCcw, Minus, Plus } from "lucide-react";
+import { Coins, RotateCcw, Minus, Plus, Star, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+
+// Extended symbols with more variety
+const EXTENDED_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '🍉', '💎', '7️⃣', '⭐', '🎰', '👑', '💰', '🔔'];
 
 interface SlotMachineProps {
   gameConfig: {
@@ -26,62 +30,139 @@ interface SlotMachineProps {
 export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
   const { profile, user, updateBalance } = useAuth();
   const [bet, setBet] = useState(gameConfig.minBet);
-  const [reels, setReels] = useState<string[]>(['🎰', '🎰', '🎰']);
+  const [reels, setReels] = useState<string[][]>([
+    ['🎰', '🍒', '💎'],
+    ['🎰', '🍋', '7️⃣'],
+    ['🎰', '🍊', '⭐'],
+    ['🎰', '🍇', '👑'],
+    ['🎰', '🍉', '💰']
+  ]);
   const [spinning, setSpinning] = useState(false);
-  const [result, setResult] = useState<{ won: boolean; amount: number } | null>(null);
+  const [result, setResult] = useState<{ won: boolean; amount: number; message: string } | null>(null);
   const [shake, setShake] = useState(false);
+  const [editingBet, setEditingBet] = useState(false);
+  const [paylines, setPaylines] = useState<number[]>([]);
+
+  const getRandomSymbol = () => EXTENDED_SYMBOLS[Math.floor(Math.random() * EXTENDED_SYMBOLS.length)];
 
   const spin = async () => {
     if (!user || !profile || spinning || bet > profile.balance) return;
 
     setSpinning(true);
     setResult(null);
+    setPaylines([]);
     
-    // Deduct bet immediately
     await updateBalance(-bet);
 
-    // Animate reels
-    const spinDuration = 2000;
-    const interval = 100;
+    const spinDuration = 2500;
+    const interval = 80;
     let elapsed = 0;
 
-    // Get win probability from settings
     const winProb = await getWinProbability();
 
     const spinInterval = setInterval(async () => {
-      setReels([
-        getRandomSlotSymbol(),
-        getRandomSlotSymbol(),
-        getRandomSlotSymbol(),
-      ]);
+      // Animate all reels
+      setReels(prev => prev.map(() => [
+        getRandomSymbol(),
+        getRandomSymbol(),
+        getRandomSymbol()
+      ]));
       elapsed += interval;
 
       if (elapsed >= spinDuration) {
         clearInterval(spinInterval);
         
-        // Determine win based on dynamic probability
         const won = Math.random() < winProb;
-        const payout = won ? Math.floor(bet * gameConfig.payoutMultiplier) : 0;
+        
+        // Generate final reels
+        let finalReels: string[][];
+        let winPaylines: number[] = [];
+        let multiplier = 1;
+        let message = '';
 
-        // Set final reels based on win
         if (won) {
-          const winSymbol = SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
-          setReels([winSymbol, winSymbol, winSymbol]);
-          triggerWinConfetti();
-          await updateBalance(payout);
-          toast.success(`You won NPR ${formatCredits(payout)}!`);
-        } else {
-          // Ensure not matching
-          let finalReels = [getRandomSlotSymbol(), getRandomSlotSymbol(), getRandomSlotSymbol()];
-          while (finalReels[0] === finalReels[1] && finalReels[1] === finalReels[2]) {
-            finalReels = [getRandomSlotSymbol(), getRandomSlotSymbol(), getRandomSlotSymbol()];
+          // Determine win type
+          const winType = Math.random();
+          if (winType < 0.1) {
+            // Jackpot - all 5 match on middle row
+            const jackpotSymbol = ['💎', '7️⃣', '👑', '💰'][Math.floor(Math.random() * 4)];
+            finalReels = Array(5).fill(null).map(() => [
+              getRandomSymbol(),
+              jackpotSymbol,
+              getRandomSymbol()
+            ]);
+            winPaylines = [1];
+            multiplier = 25;
+            message = '🎰 JACKPOT! 5 in a row!';
+          } else if (winType < 0.3) {
+            // 4 of a kind
+            const winSymbol = EXTENDED_SYMBOLS[Math.floor(Math.random() * EXTENDED_SYMBOLS.length)];
+            const randomPos = Math.floor(Math.random() * 5);
+            finalReels = Array(5).fill(null).map((_, i) => {
+              if (i === randomPos) {
+                return [getRandomSymbol(), getRandomSymbol(), getRandomSymbol()];
+              }
+              return [getRandomSymbol(), winSymbol, getRandomSymbol()];
+            });
+            winPaylines = [1];
+            multiplier = 8;
+            message = '🎉 4 of a kind!';
+          } else if (winType < 0.6) {
+            // 3 of a kind
+            const winSymbol = EXTENDED_SYMBOLS[Math.floor(Math.random() * EXTENDED_SYMBOLS.length)];
+            const winPositions = [0, 1, 2];
+            finalReels = Array(5).fill(null).map((_, i) => {
+              if (winPositions.includes(i)) {
+                return [getRandomSymbol(), winSymbol, getRandomSymbol()];
+              }
+              return [getRandomSymbol(), getRandomSymbol(), getRandomSymbol()];
+            });
+            winPaylines = [1];
+            multiplier = 3;
+            message = '🎊 3 of a kind!';
+          } else {
+            // 2 pairs or diagonal
+            const winSymbol = EXTENDED_SYMBOLS[Math.floor(Math.random() * EXTENDED_SYMBOLS.length)];
+            finalReels = Array(5).fill(null).map((_, i) => {
+              if (i < 2) {
+                return [getRandomSymbol(), winSymbol, getRandomSymbol()];
+              }
+              return [getRandomSymbol(), getRandomSymbol(), getRandomSymbol()];
+            });
+            winPaylines = [1];
+            multiplier = 1.5;
+            message = '✨ Small win!';
           }
-          setReels(finalReels);
+          
+          triggerWinConfetti();
+        } else {
+          // Ensure no winning combination
+          finalReels = Array(5).fill(null).map(() => {
+            const symbols = [getRandomSymbol(), getRandomSymbol(), getRandomSymbol()];
+            return symbols;
+          });
+          // Make sure middle row doesn't have 3+ matching
+          const middleRow = finalReels.map(r => r[1]);
+          const counts: Record<string, number> = {};
+          middleRow.forEach(s => counts[s] = (counts[s] || 0) + 1);
+          if (Object.values(counts).some(c => c >= 3)) {
+            // Randomize to break patterns
+            finalReels[2][1] = EXTENDED_SYMBOLS.find(s => s !== middleRow[0] && s !== middleRow[1]) || '🍊';
+          }
           setShake(true);
           setTimeout(() => setShake(false), 500);
         }
 
-        // Log bet to database
+        setReels(finalReels);
+        setPaylines(winPaylines);
+
+        const payout = won ? Math.floor(bet * multiplier) : 0;
+        
+        if (won) {
+          await updateBalance(payout);
+          toast.success(`${message} Won NPR ${formatCredits(payout)}!`);
+        }
+
         await supabase.from('bet_logs').insert({
           user_id: user.id,
           game: 'slots',
@@ -90,7 +171,7 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
           payout: won ? payout : 0
         });
 
-        setResult({ won, amount: payout });
+        setResult({ won, amount: payout, message: message || (won ? 'You won!' : 'Better luck next time!') });
         setSpinning(false);
       }
     }, interval);
@@ -101,36 +182,68 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     setBet(newBet);
   };
 
+  const handleBetChange = (value: string) => {
+    const num = parseInt(value) || gameConfig.minBet;
+    setBet(Math.max(gameConfig.minBet, Math.min(gameConfig.maxBet, num)));
+  };
+
   const balance = profile?.balance ?? 0;
 
   return (
-    <Card className="w-full max-w-lg mx-auto overflow-hidden border-primary/20 bg-gradient-to-b from-card to-background">
+    <Card className="w-full max-w-2xl mx-auto overflow-hidden border-primary/20 bg-gradient-to-b from-card to-background">
       <CardHeader className="text-center bg-gradient-to-b from-primary/10 to-transparent border-b border-primary/10 py-4 sm:py-6">
-        <CardTitle className="text-gradient-gold text-2xl sm:text-3xl font-display">Lucky Spin Slots</CardTitle>
-        <p className="text-muted-foreground text-sm sm:text-base">Match 3 symbols to win!</p>
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <Sparkles className="w-6 h-6 text-primary animate-pulse" />
+          <CardTitle className="text-gradient-gold text-2xl sm:text-3xl font-display">Lucky Spin Slots</CardTitle>
+          <Sparkles className="w-6 h-6 text-primary animate-pulse" />
+        </div>
+        <p className="text-muted-foreground text-sm sm:text-base">Match symbols to win big!</p>
       </CardHeader>
       
       <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
-        {/* Slot Reels */}
+        {/* 5-Reel Slot Machine */}
         <motion.div 
-          className={`flex justify-center gap-2 sm:gap-4 p-4 sm:p-8 bg-gradient-to-b from-muted to-muted/50 rounded-2xl border border-border/50 ${shake ? 'animate-shake' : ''}`}
-          animate={spinning ? { scale: [1, 1.02, 1] } : {}}
-          transition={{ repeat: spinning ? Infinity : 0, duration: 0.3 }}
+          className={`p-4 sm:p-6 bg-gradient-to-b from-muted to-muted/50 rounded-2xl border-4 border-primary/30 shadow-xl ${shake ? 'animate-shake' : ''}`}
+          animate={spinning ? { scale: [1, 1.01, 1] } : {}}
+          transition={{ repeat: spinning ? Infinity : 0, duration: 0.2 }}
         >
-          {reels.map((symbol, index) => (
-            <motion.div
-              key={index}
-              className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 flex items-center justify-center bg-gradient-to-b from-card to-background rounded-xl border-2 border-primary/30 text-4xl sm:text-5xl md:text-6xl shadow-lg"
-              animate={spinning ? { y: [0, -10, 0] } : {}}
-              transition={{ 
-                repeat: spinning ? Infinity : 0, 
-                duration: 0.15,
-                delay: index * 0.05 
-              }}
-            >
-              {symbol}
-            </motion.div>
-          ))}
+          {/* Payline indicator */}
+          <div className="absolute left-0 right-0 top-1/2 pointer-events-none z-10">
+            {paylines.includes(1) && (
+              <motion.div 
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                className="h-1 bg-secondary/50 mx-4 rounded-full"
+              />
+            )}
+          </div>
+
+          <div className="flex justify-center gap-1 sm:gap-2 relative">
+            {reels.map((reel, reelIndex) => (
+              <div key={reelIndex} className="relative">
+                <motion.div
+                  className="flex flex-col gap-1 overflow-hidden rounded-xl border-2 border-primary/20 bg-gradient-to-b from-background to-card p-1 sm:p-2"
+                  animate={spinning ? { y: [0, -5, 0] } : {}}
+                  transition={{ 
+                    repeat: spinning ? Infinity : 0, 
+                    duration: 0.1,
+                    delay: reelIndex * 0.05 
+                  }}
+                >
+                  {reel.map((symbol, symbolIndex) => (
+                    <motion.div
+                      key={symbolIndex}
+                      className={`w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 flex items-center justify-center text-2xl sm:text-3xl md:text-4xl rounded-lg ${
+                        symbolIndex === 1 && paylines.includes(1) ? 'bg-secondary/20 ring-2 ring-secondary' : 'bg-muted/50'
+                      }`}
+                    >
+                      {symbol}
+                    </motion.div>
+                  ))}
+                </motion.div>
+              </div>
+            ))}
+          </div>
         </motion.div>
 
         {/* Result Display */}
@@ -148,14 +261,14 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
             >
               <p className="text-base sm:text-lg font-bold">
                 {result.won 
-                  ? `🎉 You won NPR ${formatCredits(result.amount)}!` 
+                  ? `${result.message} +NPR ${formatCredits(result.amount)}!` 
                   : '😔 Better luck next time!'}
               </p>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Bet Controls */}
+        {/* Bet Controls with manual input */}
         <div className="space-y-3 sm:space-y-4">
           <div className="flex items-center justify-center gap-2 sm:gap-4">
             <Button
@@ -168,10 +281,27 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
               <Minus className="w-4 h-4" />
             </Button>
             
-            <div className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-primary/20 to-primary/10 rounded-xl min-w-[120px] sm:min-w-[140px] justify-center border border-primary/30">
-              <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-              <span className="text-lg sm:text-xl font-bold text-primary">NPR {formatCredits(bet)}</span>
-            </div>
+            {editingBet ? (
+              <Input
+                type="number"
+                value={bet}
+                onChange={(e) => handleBetChange(e.target.value)}
+                onBlur={() => setEditingBet(false)}
+                onKeyDown={(e) => e.key === 'Enter' && setEditingBet(false)}
+                autoFocus
+                className="w-32 text-center text-lg font-bold"
+                min={gameConfig.minBet}
+                max={gameConfig.maxBet}
+              />
+            ) : (
+              <div 
+                onClick={() => !spinning && setEditingBet(true)}
+                className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-primary/20 to-primary/10 rounded-xl min-w-[120px] sm:min-w-[140px] justify-center border border-primary/30 cursor-pointer hover:border-primary/50 transition-colors"
+              >
+                <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                <span className="text-lg sm:text-xl font-bold text-primary">NPR {formatCredits(bet)}</span>
+              </div>
+            )}
             
             <Button
               variant="outline"
@@ -185,8 +315,24 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
           </div>
 
           <p className="text-center text-xs sm:text-sm text-muted-foreground">
-            Min: NPR {gameConfig.minBet} | Max: NPR {formatCredits(gameConfig.maxBet)}
+            Min: NPR {gameConfig.minBet} | Max: NPR {formatCredits(gameConfig.maxBet)} | Click amount to edit
           </p>
+
+          {/* Quick bet buttons */}
+          <div className="flex justify-center gap-2">
+            {[10, 50, 100, 500].map((amount) => (
+              <Button
+                key={amount}
+                variant="outline"
+                size="sm"
+                onClick={() => setBet(amount)}
+                disabled={spinning || amount > balance}
+                className="text-xs"
+              >
+                {amount}
+              </Button>
+            ))}
+          </div>
 
           <Button
             variant="gold"
@@ -213,6 +359,17 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
               Insufficient balance!
             </p>
           )}
+        </div>
+
+        {/* Paytable */}
+        <div className="p-3 bg-muted/30 rounded-lg text-xs text-muted-foreground">
+          <p className="font-semibold mb-2 flex items-center gap-1"><Star className="w-3 h-3" /> Paytable:</p>
+          <div className="grid grid-cols-2 gap-1">
+            <span>5 matching = 25x</span>
+            <span>4 matching = 8x</span>
+            <span>3 matching = 3x</span>
+            <span>2 matching = 1.5x</span>
+          </div>
         </div>
       </CardContent>
     </Card>
