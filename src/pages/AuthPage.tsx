@@ -211,7 +211,6 @@ const AuthPage = () => {
         </div>
       </main>
 
-      <Disclaimer />
     </div>
   );
 };
