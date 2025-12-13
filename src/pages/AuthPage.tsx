@@ -73,7 +73,7 @@ const AuthPage = () => {
       toast.error(result.error.message || "Authentication failed");
     } else {
       if (mode === 'register') {
-        toast.success("Welcome! You've received $10 free credits!");
+        toast.success("Welcome! You've received NPR 10 free credits!");
       } else {
         toast.success("Welcome back!");
       }
@@ -121,7 +121,7 @@ const AuthPage = () => {
                 <CardDescription>
                   {mode === 'login' 
                     ? 'Sign in to continue playing' 
-                    : 'Create an account to start with $10 free!'}
+                    : 'Create an account to start with NPR 10 free!'}
                 </CardDescription>
               </CardHeader>
               
@@ -189,7 +189,7 @@ const AuthPage = () => {
                   <div className="flex items-center justify-center gap-2 p-3 bg-secondary/20 rounded-lg border border-secondary/30">
                     <Gift className="w-5 h-5 text-secondary" />
                     <span className="text-sm font-medium text-secondary">
-                      Get $10 FREE on signup!
+                      Get NPR 10 FREE on signup!
                     </span>
                   </div>
                 )}

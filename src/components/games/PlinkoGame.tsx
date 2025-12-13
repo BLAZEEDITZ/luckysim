@@ -13,22 +13,22 @@ import { Circle, Zap, Shield, Flame } from "lucide-react";
 type RiskLevel = 'low' | 'medium' | 'high';
 type RowCount = 8 | 12 | 16;
 
-// Multipliers for each risk level and row count
+// Fair multipliers - capped at reasonable values
 const MULTIPLIER_SETS: Record<RowCount, Record<RiskLevel, number[]>> = {
   8: {
-    low: [5.6, 2.1, 1.1, 1, 0.5, 1, 1.1, 2.1, 5.6],
-    medium: [13, 3, 1.3, 0.7, 0.4, 0.7, 1.3, 3, 13],
-    high: [29, 4, 1.5, 0.3, 0.2, 0.3, 1.5, 4, 29]
+    low: [3, 1.5, 1.1, 1, 0.5, 1, 1.1, 1.5, 3],
+    medium: [8, 2.5, 1.3, 0.7, 0.4, 0.7, 1.3, 2.5, 8],
+    high: [18, 3, 1.4, 0.3, 0.2, 0.3, 1.4, 3, 18]
   },
   12: {
-    low: [8.4, 3, 1.4, 1.1, 1, 0.5, 0.5, 1, 1.1, 1.4, 3, 8.4],
-    medium: [33, 11, 4, 2, 1.1, 0.6, 0.6, 1.1, 2, 4, 11, 33],
-    high: [170, 24, 8.1, 2, 0.7, 0.2, 0.2, 0.7, 2, 8.1, 24, 170]
+    low: [5, 2.5, 1.4, 1.1, 1, 0.5, 0.5, 1, 1.1, 1.4, 2.5, 5, 5],
+    medium: [20, 8, 3, 1.5, 0.8, 0.4, 0.4, 0.8, 1.5, 3, 8, 20, 20],
+    high: [50, 15, 6, 2, 0.5, 0.2, 0.2, 0.5, 2, 6, 15, 50, 50]
   },
   16: {
-    low: [16, 9, 2, 1.4, 1.1, 1, 0.5, 0.3, 0.3, 0.5, 1, 1.1, 1.4, 2, 9, 16],
-    medium: [110, 41, 10, 5, 3, 1.5, 1, 0.5, 0.5, 1, 1.5, 3, 5, 10, 41, 110],
-    high: [1000, 130, 26, 9, 4, 2, 0.2, 0.2, 0.2, 0.2, 2, 4, 9, 26, 130, 1000]
+    low: [8, 5, 2, 1.4, 1.1, 1, 0.5, 0.3, 0.3, 0.5, 1, 1.1, 1.4, 2, 5, 8, 8],
+    medium: [50, 25, 8, 4, 2, 1, 0.5, 0.3, 0.3, 0.5, 1, 2, 4, 8, 25, 50, 50],
+    high: [100, 50, 18, 7, 3, 1.5, 0.3, 0.1, 0.1, 0.3, 1.5, 3, 7, 18, 50, 100, 100]
   }
 };
 
@@ -38,23 +38,27 @@ const RISK_CONFIG: Record<RiskLevel, { label: string; icon: React.ElementType; c
   high: { label: 'High', icon: Flame, color: 'text-destructive' }
 };
 
-interface BallPath {
+interface Ball {
   id: number;
-  positions: { x: number; y: number }[];
-  currentIndex: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  active: boolean;
 }
 
 export const PlinkoGame = () => {
-  const { profile, updateBalance, refreshProfile } = useAuth();
+  const { profile, updateBalance, user } = useAuth();
   const [betAmount, setBetAmount] = useState(10);
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
   const [rowCount, setRowCount] = useState<RowCount>(12);
-  const [ballPaths, setBallPaths] = useState<BallPath[]>([]);
+  const [balls, setBalls] = useState<Ball[]>([]);
   const [dropping, setDropping] = useState(false);
   const [lastMultiplier, setLastMultiplier] = useState<number | null>(null);
   const [lastBucketIndex, setLastBucketIndex] = useState<number | null>(null);
   const ballIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<number>();
   const [dimensions, setDimensions] = useState({ width: 400, height: 500 });
 
   const multipliers = MULTIPLIER_SETS[rowCount][riskLevel];
@@ -78,130 +82,165 @@ export const PlinkoGame = () => {
   const startY = 40;
   const endY = boardHeight - 60;
   const rowHeight = (endY - startY) / rowCount;
+  const pegRadius = 5;
+  const ballRadius = 8;
+  const gravity = 0.35;
+  const bounce = 0.6;
+  const friction = 0.99;
 
   // Calculate peg positions
   const getPegPositions = useCallback(() => {
-    const pegs: { x: number; y: number; row: number; col: number }[] = [];
-
+    const pegs: { x: number; y: number }[] = [];
     for (let row = 0; row < rowCount; row++) {
       const pegCount = row + 3;
       const rowWidth = (pegCount - 1) * pegSpacing;
       const startX = (boardWidth - rowWidth) / 2;
       const y = startY + row * rowHeight;
-      
       for (let col = 0; col < pegCount; col++) {
-        pegs.push({
-          x: startX + col * pegSpacing,
-          y: y,
-          row,
-          col
-        });
+        pegs.push({ x: startX + col * pegSpacing, y });
       }
     }
     return pegs;
   }, [boardWidth, pegSpacing, rowHeight, rowCount]);
 
-  // Pre-calculate ball path - controlled by win probability
-  const generateBallPath = useCallback(async () => {
-    const positions: { x: number; y: number }[] = [];
-    let currentX = boardWidth / 2;
-    
-    // Get win probability from admin settings
-    const winProb = await getWinProbability();
-    const shouldWin = Math.random() < winProb;
-    
-    // Determine target bucket based on win/loss
-    let targetBucketIndex: number;
-    if (shouldWin) {
-      // Pick a bucket with multiplier >= 1
-      const winningBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m >= 1);
-      const pick = winningBuckets[Math.floor(Math.random() * winningBuckets.length)];
-      targetBucketIndex = pick.i;
-    } else {
-      // Pick a bucket with multiplier < 1
-      const losingBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m < 1);
-      if (losingBuckets.length > 0) {
-        const pick = losingBuckets[Math.floor(Math.random() * losingBuckets.length)];
-        targetBucketIndex = pick.i;
-      } else {
-        // No losing buckets, pick center (lowest)
-        targetBucketIndex = Math.floor(multipliers.length / 2);
-      }
-    }
-    
-    // Calculate target X position for that bucket
-    const bucketWidth = (boardWidth - 20) / multipliers.length;
-    const targetX = 10 + (targetBucketIndex + 0.5) * bucketWidth;
-    
-    // Start position
-    positions.push({ x: currentX, y: 10 });
-    
-    // Simulate path that leads towards target
-    for (let row = 0; row < rowCount; row++) {
-      const y = startY + row * rowHeight;
-      const halfSpacing = pegSpacing / 2;
-      
-      // Bias movement towards target
-      const distanceToTarget = targetX - currentX;
-      const bias = distanceToTarget > 0 ? 0.6 : 0.4;
-      const goRight = Math.random() < bias;
-      
-      // Add bounce effect
-      positions.push({ x: currentX, y: y - 5 });
-      
-      // Deflect with some randomness
-      if (goRight) {
-        currentX += halfSpacing + (Math.random() * 3 - 1.5);
-      } else {
-        currentX -= halfSpacing + (Math.random() * 3 - 1.5);
-      }
-      
-      // Clamp to board bounds
-      currentX = Math.max(30, Math.min(boardWidth - 30, currentX));
-      
-      // Position after bounce
-      positions.push({ x: currentX, y: y + rowHeight * 0.6 });
-    }
-    
-    // Snap to target bucket at the end
-    const finalX = 10 + (targetBucketIndex + 0.5) * bucketWidth;
-    positions.push({ x: finalX, y: endY + 15 });
-    
-    return { positions, bucketIndex: targetBucketIndex };
-  }, [boardWidth, pegSpacing, rowHeight, multipliers, startY, endY, rowCount]);
+  const pegs = getPegPositions();
+  const bucketWidth = (boardWidth - 20) / multipliers.length;
 
-  // Animate ball along pre-calculated path
-  const animateBall = useCallback((path: { x: number; y: number }[], ballId: number): Promise<void> => {
-    return new Promise((resolve) => {
-      setBallPaths(prev => [...prev, { id: ballId, positions: path, currentIndex: 0 }]);
+  // Physics simulation
+  const simulate = useCallback((ball: Ball): Ball => {
+    let { x, y, vx, vy, active, id } = ball;
+    if (!active) return ball;
+
+    // Apply gravity
+    vy += gravity;
+    
+    // Apply velocity with friction
+    x += vx;
+    y += vy;
+    vx *= friction;
+
+    // Check peg collisions with realistic physics
+    for (const peg of pegs) {
+      const dx = x - peg.x;
+      const dy = y - peg.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = ballRadius + pegRadius;
       
-      let index = 0;
-      const speed = 45; // ms per position
-      
-      const interval = setInterval(() => {
-        index++;
-        if (index >= path.length) {
-          clearInterval(interval);
-          setTimeout(() => {
-            setBallPaths(prev => prev.filter(b => b.id !== ballId));
-            resolve();
-          }, 600);
-          return;
-        }
+      if (dist < minDist && dist > 0) {
+        // Collision detected - realistic bounce
+        const nx = dx / dist;
+        const ny = dy / dist;
         
-        setBallPaths(prev => prev.map(b => 
-          b.id === ballId ? { ...b, currentIndex: index } : b
-        ));
-      }, speed);
-    });
-  }, []);
+        // Relative velocity
+        const dvn = vx * nx + vy * ny;
+        
+        // Only bounce if approaching
+        if (dvn < 0) {
+          // Apply bounce with some randomness for natural feel
+          const randomFactor = 0.8 + Math.random() * 0.4;
+          vx -= (1 + bounce * randomFactor) * dvn * nx;
+          vy -= (1 + bounce * randomFactor) * dvn * ny;
+          
+          // Add slight spin effect
+          vx += (Math.random() - 0.5) * 1.2;
+          
+          // Separate balls from peg
+          const overlap = minDist - dist;
+          x += nx * overlap * 1.1;
+          y += ny * overlap * 1.1;
+        }
+      }
+    }
+
+    // Wall collisions
+    if (x < ballRadius + 10) {
+      x = ballRadius + 10;
+      vx = Math.abs(vx) * bounce;
+    }
+    if (x > boardWidth - ballRadius - 10) {
+      x = boardWidth - ballRadius - 10;
+      vx = -Math.abs(vx) * bounce;
+    }
+
+    // Check if ball reached bottom
+    if (y >= endY + 10) {
+      active = false;
+    }
+
+    return { id, x, y, vx, vy, active };
+  }, [pegs, boardWidth, endY]);
+
+  // Animation loop
+  useEffect(() => {
+    const animate = () => {
+      setBalls(prev => {
+        const updated = prev.map(simulate);
+        return updated;
+      });
+      animationRef.current = requestAnimationFrame(animate);
+    };
+    
+    if (balls.some(b => b.active)) {
+      animationRef.current = requestAnimationFrame(animate);
+    }
+    
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [balls.length, simulate]);
+
+  // Handle ball landing
+  useEffect(() => {
+    const landedBalls = balls.filter(b => !b.active && b.y >= endY);
+    if (landedBalls.length > 0 && dropping) {
+      const ball = landedBalls[landedBalls.length - 1];
+      const bucketIndex = Math.min(
+        Math.max(0, Math.floor((ball.x - 10) / bucketWidth)),
+        multipliers.length - 1
+      );
+      
+      const multiplier = multipliers[bucketIndex];
+      const payout = betAmount * multiplier;
+      const won = multiplier >= 1;
+
+      setLastMultiplier(multiplier);
+      setLastBucketIndex(bucketIndex);
+      
+      // Update balance
+      updateBalance(payout).then(() => {
+        if (multiplier >= 5) {
+          triggerWinConfetti();
+          toast.success(`🎉 ${multiplier}x - Won NPR ${formatCredits(payout)}!`);
+        } else if (multiplier >= 1) {
+          toast.success(`${multiplier}x - Won NPR ${formatCredits(payout)}!`);
+        } else {
+          toast.error(`${multiplier}x - Returned NPR ${formatCredits(payout)}`);
+        }
+      });
+
+      // Log bet
+      if (user) {
+        supabase.from('bet_logs').insert({
+          user_id: user.id,
+          game: 'plinko',
+          bet_amount: betAmount,
+          won,
+          payout
+        });
+      }
+
+      setDropping(false);
+      setBalls([]);
+    }
+  }, [balls, dropping, betAmount, multipliers, bucketWidth, endY, updateBalance, user]);
 
   const dropBall = async () => {
     if (!profile || betAmount > profile.balance) {
       toast.error("Insufficient balance!");
       return;
     }
-
     if (betAmount < 1) {
       toast.error("Minimum bet is NPR 1");
       return;
@@ -212,52 +251,39 @@ export const PlinkoGame = () => {
     setLastMultiplier(null);
     setLastBucketIndex(null);
 
-    const ballId = ++ballIdRef.current;
-    const { positions, bucketIndex } = await generateBallPath();
+    // Get win probability and calculate target
+    const winProb = await getWinProbability();
+    const shouldWin = Math.random() < winProb;
     
-    // Animate ball
-    await animateBall(positions, ballId);
-    
-    const multiplier = multipliers[bucketIndex];
-    const payout = betAmount * multiplier;
-    const won = multiplier >= 1;
-
-    setLastMultiplier(multiplier);
-    setLastBucketIndex(bucketIndex);
-
-    if (payout > 0) {
-      await updateBalance(payout);
-    }
-
-    if (multiplier >= 5) {
-      triggerWinConfetti();
-      toast.success(`🎉 ${multiplier}x - Won NPR ${formatCredits(payout)}!`);
-    } else if (multiplier >= 1) {
-      toast.success(`${multiplier}x - Won NPR ${formatCredits(payout)}!`);
+    // Bias starting position based on target
+    let targetBucketIndex: number;
+    if (shouldWin) {
+      const winningBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m >= 1);
+      targetBucketIndex = winningBuckets[Math.floor(Math.random() * winningBuckets.length)]?.i ?? Math.floor(multipliers.length / 2);
     } else {
-      toast.error(`${multiplier}x - Returned NPR ${formatCredits(payout)}`);
+      const losingBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m < 1);
+      targetBucketIndex = losingBuckets.length > 0 
+        ? losingBuckets[Math.floor(Math.random() * losingBuckets.length)].i 
+        : Math.floor(multipliers.length / 2);
     }
+    
+    // Calculate starting x with slight bias
+    const targetX = 10 + (targetBucketIndex + 0.5) * bucketWidth;
+    const centerX = boardWidth / 2;
+    const biasStrength = 0.15;
+    const startX = centerX + (targetX - centerX) * biasStrength + (Math.random() - 0.5) * 20;
 
-    await supabase.from('bet_logs').insert({
-      user_id: profile?.id,
-      game: 'plinko',
-      bet_amount: betAmount,
-      won,
-      payout
-    });
+    const newBall: Ball = {
+      id: ++ballIdRef.current,
+      x: Math.max(ballRadius + 15, Math.min(boardWidth - ballRadius - 15, startX)),
+      y: 15,
+      vx: (Math.random() - 0.5) * 2,
+      vy: 0,
+      active: true
+    };
 
-    await refreshProfile();
-    setDropping(false);
+    setBalls([newBall]);
   };
-
-  const pegs = getPegPositions();
-  const bucketWidth = (boardWidth - 20) / multipliers.length;
-
-  // Get current ball positions for rendering
-  const currentBalls = ballPaths.map(bp => ({
-    id: bp.id,
-    ...bp.positions[bp.currentIndex]
-  }));
 
   return (
     <div className="grid lg:grid-cols-3 gap-3 sm:gap-6">
@@ -278,31 +304,35 @@ export const PlinkoGame = () => {
             {pegs.map((peg, i) => (
               <div
                 key={i}
-                className="absolute w-2 h-2 sm:w-2.5 sm:h-2.5 bg-primary/70 rounded-full"
+                className="absolute w-2.5 h-2.5 sm:w-3 sm:h-3 bg-primary/80 rounded-full shadow-md"
                 style={{ 
                   left: peg.x,
                   top: peg.y,
-                  transform: 'translate(-50%, -50%)'
+                  transform: 'translate(-50%, -50%)',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
                 }}
               />
             ))}
 
-            {/* Balls */}
+            {/* Balls with realistic physics */}
             <AnimatePresence>
-              {currentBalls.map((ball) => (
+              {balls.filter(b => b.active || b.y < endY + 20).map((ball) => (
                 <motion.div
                   key={ball.id}
-                  className="absolute w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-br from-amber-300 via-primary to-amber-500 rounded-full shadow-lg border-2 border-amber-200"
+                  className="absolute rounded-full shadow-lg"
                   style={{ 
                     left: ball.x,
                     top: ball.y,
+                    width: ballRadius * 2,
+                    height: ballRadius * 2,
                     transform: 'translate(-50%, -50%)',
+                    background: 'radial-gradient(circle at 30% 30%, #ffd700, #ff8c00)',
+                    boxShadow: '0 4px 12px rgba(255,165,0,0.6), inset 0 -2px 6px rgba(0,0,0,0.3)',
                     zIndex: 20
                   }}
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1, rotate: ball.vx * 10 }}
                   exit={{ scale: 0, opacity: 0 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
                 />
               ))}
             </AnimatePresence>
@@ -311,8 +341,8 @@ export const PlinkoGame = () => {
             <div className="absolute bottom-0 left-[10px] right-[10px] flex gap-[2px] pb-1" style={{ height: '44px' }}>
               {multipliers.map((mult, i) => {
                 const isHighlight = lastBucketIndex === i;
-                const isHigh = mult >= 25;
-                const isMed = mult >= 3 && mult < 25;
+                const isHigh = mult >= 20;
+                const isMed = mult >= 3 && mult < 20;
                 const isLow = mult >= 1 && mult < 3;
                 
                 return (
@@ -331,7 +361,7 @@ export const PlinkoGame = () => {
                     } : {}}
                     transition={{ duration: 0.6 }}
                   >
-                    {mult >= 1000 ? '1000x' : `${mult}x`}
+                    {mult}x
                   </motion.div>
                 );
               })}
@@ -345,7 +375,7 @@ export const PlinkoGame = () => {
               className="mt-4 text-center"
             >
               <div className={`text-3xl sm:text-5xl font-display font-bold ${
-                lastMultiplier >= 25 ? 'text-secondary animate-pulse' : 
+                lastMultiplier >= 20 ? 'text-secondary animate-pulse' : 
                 lastMultiplier >= 3 ? 'text-primary' : 
                 lastMultiplier >= 1 ? 'text-amber-400' : 'text-destructive'
               }`}>
@@ -427,7 +457,7 @@ export const PlinkoGame = () => {
               min={1}
               max={profile?.balance ?? 0}
               value={betAmount}
-              onChange={(e) => setBetAmount(Number(e.target.value))}
+              onChange={(e) => setBetAmount(Math.max(1, Number(e.target.value)))}
               disabled={dropping}
               className="text-sm sm:text-base"
             />
@@ -468,12 +498,12 @@ export const PlinkoGame = () => {
           {/* Multipliers Display */}
           <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
             <p className="font-semibold mb-2">Multipliers ({riskLevel}):</p>
-            <div className="flex flex-wrap gap-1 justify-center">
-              {[...new Set(multipliers)].sort((a, b) => b - a).map(m => (
-                <span key={m} className={`px-2 py-0.5 rounded text-[10px] ${
-                  m >= 25 ? 'bg-secondary/40 text-secondary-foreground' : 
-                  m >= 3 ? 'bg-primary/40' : 
-                  m >= 1 ? 'bg-amber-500/30' : 'bg-destructive/30'
+            <div className="flex flex-wrap gap-1">
+              {multipliers.slice(0, Math.ceil(multipliers.length / 2)).map((m, i) => (
+                <span key={i} className={`px-1.5 py-0.5 rounded ${
+                  m >= 20 ? 'bg-secondary/30 text-secondary' :
+                  m >= 3 ? 'bg-primary/30 text-primary' :
+                  m >= 1 ? 'bg-amber-500/30 text-amber-400' : 'bg-destructive/30 text-destructive'
                 }`}>
                   {m}x
                 </span>
@@ -481,13 +511,11 @@ export const PlinkoGame = () => {
             </div>
           </div>
 
-          <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
-            <p className="font-semibold mb-1">How to Play:</p>
-            <ul className="list-disc list-inside space-y-0.5">
-              <li>Choose risk level (higher = bigger wins)</li>
-              <li>Drop ball & watch it bounce</li>
-              <li>Edge buckets = highest rewards!</li>
-            </ul>
+          <div className="text-xs text-muted-foreground space-y-1 p-3 border border-border/30 rounded-lg">
+            <p className="font-semibold">How to Play:</p>
+            <p>• Drop the ball and watch it bounce through pegs</p>
+            <p>• Higher risk = higher potential multipliers</p>
+            <p>• More rows = more bounces and variance</p>
           </div>
         </CardContent>
       </Card>
