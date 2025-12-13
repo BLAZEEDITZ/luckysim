@@ -1,8 +1,36 @@
 import confetti from 'canvas-confetti';
 import { supabase } from '@/integrations/supabase/client';
 
-// Fetch win probability from database (default 15%)
-export const getWinProbability = async (): Promise<number> => {
+// Fetch win probability from database for a specific game and user
+export const getWinProbability = async (game?: string, userId?: string): Promise<number> => {
+  // First check for user-specific rate
+  if (userId && game) {
+    const { data: userRate } = await supabase
+      .from('user_win_rates')
+      .select('win_probability')
+      .eq('user_id', userId)
+      .eq('game', game)
+      .single();
+    
+    if (userRate?.win_probability !== undefined) {
+      return userRate.win_probability;
+    }
+  }
+  
+  // Then check for game-specific rate
+  if (game) {
+    const { data: gameRate } = await supabase
+      .from('game_settings')
+      .select('setting_value')
+      .eq('setting_key', `win_probability_${game}`)
+      .single();
+    
+    if (gameRate?.setting_value !== undefined) {
+      return gameRate.setting_value;
+    }
+  }
+  
+  // Fall back to global rate
   const { data } = await supabase
     .from('game_settings')
     .select('setting_value')

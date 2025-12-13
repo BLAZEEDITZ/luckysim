@@ -25,7 +25,7 @@ interface Tile {
 }
 
 export const MinesGame = () => {
-  const { profile, updateBalance, refreshProfile } = useAuth();
+  const { profile, user, updateBalance, refreshProfile } = useAuth();
   const [betAmount, setBetAmount] = useState(10);
   const [mineCount, setMineCount] = useState(3);
   const [gridSize, setGridSize] = useState<GridSize>('large');
@@ -47,18 +47,36 @@ export const MinesGame = () => {
     if (revealed === 0) return 1;
     
     const safeSpots = total - mines;
+    
+    // Prevent edge cases with too many mines
+    if (mines >= total - 1) {
+      return revealed > 0 ? Math.min(mines * 2, 50) : 1;
+    }
+    
     let multiplier = 1;
     
     for (let i = 0; i < revealed; i++) {
       const remainingSafe = safeSpots - i;
       const remainingTotal = total - i;
+      if (remainingSafe <= 0 || remainingTotal <= 0) break;
       multiplier *= remainingTotal / remainingSafe;
     }
     
+    // Apply house edge and cap multipliers fairly
     multiplier *= 0.97;
-    const maxMultiplier = mines === 1 ? 24 : Math.min(mines * 15, 1000);
     
-    return Math.min(multiplier, maxMultiplier);
+    // Fair caps based on mine count and grid size
+    let maxMultiplier: number;
+    if (mines === 1) {
+      maxMultiplier = 24;
+    } else if (mines >= total - 2) {
+      // Second-last and last mines: cap at reasonable values
+      maxMultiplier = Math.min(mines * 5, 100);
+    } else {
+      maxMultiplier = Math.min(mines * 12, 500);
+    }
+    
+    return Math.min(Math.max(multiplier, 1), maxMultiplier);
   }, []);
 
   const maxPossibleMultiplier = useMemo(() => {
@@ -77,7 +95,7 @@ export const MinesGame = () => {
       return;
     }
 
-    const winProb = await getWinProbability();
+    const winProb = await getWinProbability('mines', user?.id);
     const shouldWin = Math.random() < winProb;
 
     await updateBalance(-betAmount);

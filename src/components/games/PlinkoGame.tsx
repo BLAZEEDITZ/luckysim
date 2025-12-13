@@ -79,14 +79,14 @@ export const PlinkoGame = () => {
 
   const { width: boardWidth, height: boardHeight } = dimensions;
   const pegSpacing = boardWidth / (rowCount + 4);
-  const startY = 40;
+  const startY = 60; // Increased to give ball more room before first peg
   const endY = boardHeight - 60;
   const rowHeight = (endY - startY) / rowCount;
   const pegRadius = 5;
   const ballRadius = 8;
-  const gravity = 0.35;
-  const bounce = 0.6;
-  const friction = 0.99;
+  const gravity = 0.45; // Increased for faster fall
+  const bounce = 0.7; // Increased for more bounce
+  const friction = 0.98;
 
   // Calculate peg positions
   const getPegPositions = useCallback(() => {
@@ -252,7 +252,7 @@ export const PlinkoGame = () => {
     setLastBucketIndex(null);
 
     // Get win probability and calculate target
-    const winProb = await getWinProbability();
+    const winProb = await getWinProbability('plinko', user?.id);
     const shouldWin = Math.random() < winProb;
     
     // Bias starting position based on target
@@ -276,9 +276,9 @@ export const PlinkoGame = () => {
     const newBall: Ball = {
       id: ++ballIdRef.current,
       x: Math.max(ballRadius + 15, Math.min(boardWidth - ballRadius - 15, startX)),
-      y: 15,
-      vx: (Math.random() - 0.5) * 2,
-      vy: 0,
+      y: 10, // Start higher up
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: 2, // Start with downward velocity to avoid getting stuck
       active: true
     };
 

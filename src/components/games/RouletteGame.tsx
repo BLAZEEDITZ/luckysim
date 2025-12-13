@@ -54,7 +54,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
     setResult(null);
     await updateBalance(-bet);
 
-    const winProb = await getWinProbability();
+    const winProb = await getWinProbability('roulette', user?.id);
 
     // Animate wheel spin
     const spinDuration = 4000;
