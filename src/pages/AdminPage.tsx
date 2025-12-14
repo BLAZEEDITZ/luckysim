@@ -152,19 +152,48 @@ const AdminPage = () => {
   };
 
   const updateGlobalWinProbability = async () => {
-    const { error } = await supabase
+    const newValue = globalWinProbability / 100;
+    const timestamp = new Date().toISOString();
+    
+    // Update global rate
+    const { error: globalError } = await supabase
       .from('game_settings')
       .update({ 
-        setting_value: globalWinProbability / 100,
-        updated_at: new Date().toISOString()
+        setting_value: newValue,
+        updated_at: timestamp
       })
       .eq('setting_key', 'win_probability');
 
-    if (error) {
+    if (globalError) {
       toast.error("Failed to update win probability");
-    } else {
-      toast.success(`Global win probability updated to ${globalWinProbability}%`);
+      return;
     }
+
+    // Update all per-game rates to match
+    const gameKeys = Object.keys(GAME_NAMES);
+    const updatePromises = gameKeys.map(game => 
+      supabase
+        .from('game_settings')
+        .update({ 
+          setting_value: newValue,
+          updated_at: timestamp
+        })
+        .eq('setting_key', `win_probability_${game}`)
+    );
+
+    await Promise.all(updatePromises);
+
+    // Update local state
+    const newGameRates: GameWinRates = {
+      slots: globalWinProbability,
+      roulette: globalWinProbability,
+      blackjack: globalWinProbability,
+      plinko: globalWinProbability,
+      mines: globalWinProbability
+    };
+    setGameWinRates(newGameRates);
+
+    toast.success(`All win rates updated to ${globalWinProbability}%`);
   };
 
   const updateGameWinRate = async (game: string, rate: number) => {
