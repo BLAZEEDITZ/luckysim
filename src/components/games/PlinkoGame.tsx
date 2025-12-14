@@ -79,14 +79,16 @@ export const PlinkoGame = () => {
 
   const { width: boardWidth, height: boardHeight } = dimensions;
   const pegSpacing = boardWidth / (rowCount + 4);
-  const startY = 60; // Increased to give ball more room before first peg
+  const startY = 70; // More room before first peg
   const endY = boardHeight - 60;
   const rowHeight = (endY - startY) / rowCount;
-  const pegRadius = 5;
-  const ballRadius = 8;
-  const gravity = 0.45; // Increased for faster fall
-  const bounce = 0.7; // Increased for more bounce
-  const friction = 0.98;
+  
+  // Responsive sizes based on board width - smaller ball to prevent sticking
+  const pegRadius = Math.max(3, Math.min(5, boardWidth / 100));
+  const ballRadius = Math.max(4, Math.min(6, boardWidth / 80)); // Smaller ball relative to pegs
+  const gravity = 0.5;
+  const bounce = 0.65;
+  const friction = 0.97;
 
   // Calculate peg positions
   const getPegPositions = useCallback(() => {
@@ -106,7 +108,9 @@ export const PlinkoGame = () => {
   const pegs = getPegPositions();
   const bucketWidth = (boardWidth - 20) / multipliers.length;
 
-  // Physics simulation
+  // Physics simulation with target bucket bias
+  const [targetBucket, setTargetBucket] = useState<number | null>(null);
+  
   const simulate = useCallback((ball: Ball): Ball => {
     let { x, y, vx, vy, active, id } = ball;
     if (!active) return ball;
@@ -119,12 +123,25 @@ export const PlinkoGame = () => {
     y += vy;
     vx *= friction;
 
+    // Calculate target x for the forced outcome
+    const targetX = targetBucket !== null 
+      ? 10 + (targetBucket + 0.5) * bucketWidth 
+      : boardWidth / 2;
+    
+    // Apply stronger bias toward target as ball gets lower (controlled outcome)
+    const progress = Math.min(1, (y - startY) / (endY - startY));
+    if (progress > 0.3 && targetBucket !== null) {
+      const biasStrength = 0.08 * progress; // Gradually increase bias
+      const targetDirection = targetX > x ? 1 : -1;
+      vx += targetDirection * biasStrength;
+    }
+
     // Check peg collisions with realistic physics
     for (const peg of pegs) {
       const dx = x - peg.x;
       const dy = y - peg.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = ballRadius + pegRadius;
+      const minDist = ballRadius + pegRadius + 2; // Extra clearance
       
       if (dist < minDist && dist > 0) {
         // Collision detected - realistic bounce
@@ -136,29 +153,39 @@ export const PlinkoGame = () => {
         
         // Only bounce if approaching
         if (dvn < 0) {
-          // Apply bounce with some randomness for natural feel
-          const randomFactor = 0.8 + Math.random() * 0.4;
+          // Apply bounce with randomness but biased toward target
+          let randomFactor = 0.7 + Math.random() * 0.3;
+          
+          // Bias bounce direction toward target
+          if (targetBucket !== null && progress > 0.2) {
+            const shouldGoRight = targetX > x;
+            if ((shouldGoRight && nx > 0) || (!shouldGoRight && nx < 0)) {
+              randomFactor += 0.2; // Stronger bounce toward target
+            }
+          }
+          
           vx -= (1 + bounce * randomFactor) * dvn * nx;
           vy -= (1 + bounce * randomFactor) * dvn * ny;
           
-          // Add slight spin effect
-          vx += (Math.random() - 0.5) * 1.2;
-          
-          // Separate balls from peg
+          // Separate balls from peg with extra push
           const overlap = minDist - dist;
-          x += nx * overlap * 1.1;
-          y += ny * overlap * 1.1;
+          x += nx * overlap * 1.5;
+          y += ny * overlap * 1.5;
+          
+          // Ensure ball moves down
+          if (vy < 1) vy = 1;
         }
       }
     }
 
     // Wall collisions
-    if (x < ballRadius + 10) {
-      x = ballRadius + 10;
+    const wallPadding = ballRadius + 15;
+    if (x < wallPadding) {
+      x = wallPadding;
       vx = Math.abs(vx) * bounce;
     }
-    if (x > boardWidth - ballRadius - 10) {
-      x = boardWidth - ballRadius - 10;
+    if (x > boardWidth - wallPadding) {
+      x = boardWidth - wallPadding;
       vx = -Math.abs(vx) * bounce;
     }
 
@@ -168,7 +195,7 @@ export const PlinkoGame = () => {
     }
 
     return { id, x, y, vx, vy, active };
-  }, [pegs, boardWidth, endY]);
+  }, [pegs, boardWidth, endY, targetBucket, bucketWidth, startY]);
 
   // Animation loop
   useEffect(() => {
@@ -233,6 +260,7 @@ export const PlinkoGame = () => {
 
       setDropping(false);
       setBalls([]);
+      setTargetBucket(null); // Reset target for next drop
     }
   }, [balls, dropping, betAmount, multipliers, bucketWidth, endY, updateBalance, user]);
 
@@ -251,34 +279,50 @@ export const PlinkoGame = () => {
     setLastMultiplier(null);
     setLastBucketIndex(null);
 
-    // Get win probability and calculate target
+    // Get win probability and calculate target - THIS ENFORCES THE WIN RATE
     const winProb = await getWinProbability('plinko', user?.id);
     const shouldWin = Math.random() < winProb;
     
-    // Bias starting position based on target
+    // Determine target bucket based on win/loss decision
     let targetBucketIndex: number;
     if (shouldWin) {
-      const winningBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m >= 1);
-      targetBucketIndex = winningBuckets[Math.floor(Math.random() * winningBuckets.length)]?.i ?? Math.floor(multipliers.length / 2);
+      // Pick a winning bucket (multiplier >= 1)
+      const winningBuckets = multipliers
+        .map((m, i) => ({ m, i }))
+        .filter(b => b.m >= 1);
+      
+      // Prefer middle-high multipliers for better UX
+      const sortedWinning = winningBuckets.sort((a, b) => b.m - a.m);
+      const topHalf = sortedWinning.slice(0, Math.ceil(sortedWinning.length / 2));
+      targetBucketIndex = topHalf[Math.floor(Math.random() * topHalf.length)]?.i 
+        ?? Math.floor(multipliers.length / 2);
     } else {
-      const losingBuckets = multipliers.map((m, i) => ({ m, i })).filter(b => b.m < 1);
-      targetBucketIndex = losingBuckets.length > 0 
-        ? losingBuckets[Math.floor(Math.random() * losingBuckets.length)].i 
-        : Math.floor(multipliers.length / 2);
+      // Pick a losing bucket (multiplier < 1)
+      const losingBuckets = multipliers
+        .map((m, i) => ({ m, i }))
+        .filter(b => b.m < 1);
+      
+      if (losingBuckets.length > 0) {
+        targetBucketIndex = losingBuckets[Math.floor(Math.random() * losingBuckets.length)].i;
+      } else {
+        // If no losing buckets, pick lowest multiplier
+        const minMult = Math.min(...multipliers);
+        targetBucketIndex = multipliers.findIndex(m => m === minMult);
+      }
     }
     
-    // Calculate starting x with slight bias
-    const targetX = 10 + (targetBucketIndex + 0.5) * bucketWidth;
+    // Set the target for physics simulation to enforce
+    setTargetBucket(targetBucketIndex);
+    
+    // Start ball from center with slight randomness
     const centerX = boardWidth / 2;
-    const biasStrength = 0.15;
-    const startX = centerX + (targetX - centerX) * biasStrength + (Math.random() - 0.5) * 20;
 
     const newBall: Ball = {
       id: ++ballIdRef.current,
-      x: Math.max(ballRadius + 15, Math.min(boardWidth - ballRadius - 15, startX)),
-      y: 10, // Start higher up
-      vx: (Math.random() - 0.5) * 1.5,
-      vy: 2, // Start with downward velocity to avoid getting stuck
+      x: centerX + (Math.random() - 0.5) * 30,
+      y: 15,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: 3, // Good downward velocity
       active: true
     };
 
@@ -300,14 +344,16 @@ export const PlinkoGame = () => {
             className="relative mx-auto bg-gradient-to-b from-muted/40 to-muted/70 rounded-xl overflow-hidden border border-border/40"
             style={{ width: `${boardWidth}px`, height: `${boardHeight}px` }}
           >
-            {/* Pegs */}
+            {/* Pegs - responsive size */}
             {pegs.map((peg, i) => (
               <div
                 key={i}
-                className="absolute w-2.5 h-2.5 sm:w-3 sm:h-3 bg-primary/80 rounded-full shadow-md"
+                className="absolute bg-primary/80 rounded-full shadow-md"
                 style={{ 
                   left: peg.x,
                   top: peg.y,
+                  width: pegRadius * 2,
+                  height: pegRadius * 2,
                   transform: 'translate(-50%, -50%)',
                   boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
                 }}
