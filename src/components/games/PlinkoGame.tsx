@@ -79,18 +79,22 @@ export const PlinkoGame = () => {
 
   const { width: boardWidth, height: boardHeight } = dimensions;
   const pegSpacing = boardWidth / (rowCount + 4);
-  const startY = 70; // More room before first peg
+  const startY = 80;
   const endY = boardHeight - 60;
   const rowHeight = (endY - startY) / rowCount;
   
-  // Responsive sizes based on board width - smaller ball to prevent sticking
-  const pegRadius = Math.max(3, Math.min(5, boardWidth / 100));
-  const ballRadius = Math.max(4, Math.min(6, boardWidth / 80)); // Smaller ball relative to pegs
-  const gravity = 0.5;
-  const bounce = 0.65;
-  const friction = 0.97;
+  // FIXED: Much smaller ball relative to peg gaps to prevent sticking
+  const pegRadius = Math.max(2, Math.min(4, boardWidth / 120));
+  const ballRadius = Math.max(3, Math.min(5, boardWidth / 100)); // Much smaller ball
+  const gapBetweenPegs = pegSpacing - pegRadius * 2;
+  const safetyMargin = gapBetweenPegs * 0.3; // Ball should be much smaller than gap
+  const effectiveBallRadius = Math.min(ballRadius, safetyMargin);
+  
+  const gravity = 0.35;
+  const bounce = 0.5;
+  const friction = 0.98;
 
-  // Calculate peg positions
+  // Calculate peg positions with more spacing
   const getPegPositions = useCallback(() => {
     const pegs: { x: number; y: number }[] = [];
     for (let row = 0; row < rowCount; row++) {
@@ -103,12 +107,12 @@ export const PlinkoGame = () => {
       }
     }
     return pegs;
-  }, [boardWidth, pegSpacing, rowHeight, rowCount]);
+  }, [boardWidth, pegSpacing, rowHeight, rowCount, startY]);
 
   const pegs = getPegPositions();
   const bucketWidth = (boardWidth - 20) / multipliers.length;
 
-  // Physics simulation with target bucket bias
+  // Physics simulation with STRONG target bucket enforcement
   const [targetBucket, setTargetBucket] = useState<number | null>(null);
   
   const simulate = useCallback((ball: Ball): Ball => {
@@ -123,70 +127,66 @@ export const PlinkoGame = () => {
     y += vy;
     vx *= friction;
 
-    // Calculate target x for the forced outcome
+    // Calculate target x for the FORCED outcome
     const targetX = targetBucket !== null 
       ? 10 + (targetBucket + 0.5) * bucketWidth 
       : boardWidth / 2;
     
-    // Apply stronger bias toward target as ball gets lower (controlled outcome)
+    // STRONG bias toward target - this ENFORCES the win rate
     const progress = Math.min(1, (y - startY) / (endY - startY));
-    if (progress > 0.3 && targetBucket !== null) {
-      const biasStrength = 0.08 * progress; // Gradually increase bias
+    if (targetBucket !== null) {
+      const distanceToTarget = Math.abs(targetX - x);
+      // Stronger bias as ball progresses and if far from target
+      const biasStrength = 0.15 * progress + (distanceToTarget > bucketWidth ? 0.1 : 0);
       const targetDirection = targetX > x ? 1 : -1;
       vx += targetDirection * biasStrength;
+      
+      // Near the bottom, force toward target
+      if (progress > 0.8) {
+        vx += targetDirection * 0.3;
+      }
     }
 
-    // Check peg collisions with realistic physics
+    // Check peg collisions - simplified to prevent sticking
     for (const peg of pegs) {
       const dx = x - peg.x;
       const dy = y - peg.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = ballRadius + pegRadius + 2; // Extra clearance
+      const minDist = effectiveBallRadius + pegRadius + 4; // More clearance
       
       if (dist < minDist && dist > 0) {
-        // Collision detected - realistic bounce
+        // Push ball away from peg immediately
         const nx = dx / dist;
         const ny = dy / dist;
         
-        // Relative velocity
-        const dvn = vx * nx + vy * ny;
+        // Always push away, don't check if approaching
+        const pushStrength = (minDist - dist) + 3;
+        x += nx * pushStrength;
+        y += ny * pushStrength;
         
-        // Only bounce if approaching
-        if (dvn < 0) {
-          // Apply bounce with randomness but biased toward target
-          let randomFactor = 0.7 + Math.random() * 0.3;
-          
-          // Bias bounce direction toward target
-          if (targetBucket !== null && progress > 0.2) {
-            const shouldGoRight = targetX > x;
-            if ((shouldGoRight && nx > 0) || (!shouldGoRight && nx < 0)) {
-              randomFactor += 0.2; // Stronger bounce toward target
-            }
-          }
-          
-          vx -= (1 + bounce * randomFactor) * dvn * nx;
-          vy -= (1 + bounce * randomFactor) * dvn * ny;
-          
-          // Separate balls from peg with extra push
-          const overlap = minDist - dist;
-          x += nx * overlap * 1.5;
-          y += ny * overlap * 1.5;
-          
-          // Ensure ball moves down
-          if (vy < 1) vy = 1;
+        // Add bounce velocity biased toward target
+        let bounceDir = Math.sign(dx) || (Math.random() > 0.5 ? 1 : -1);
+        
+        // Bias toward target bucket
+        if (targetBucket !== null) {
+          const shouldGoRight = targetX > x;
+          bounceDir = shouldGoRight ? 1 : -1;
         }
+        
+        vx = bounceDir * (2 + Math.random() * 2);
+        vy = Math.max(vy, 2); // Keep moving down
       }
     }
 
     // Wall collisions
-    const wallPadding = ballRadius + 15;
+    const wallPadding = effectiveBallRadius + 20;
     if (x < wallPadding) {
       x = wallPadding;
-      vx = Math.abs(vx) * bounce;
+      vx = Math.abs(vx) * 0.5 + 1;
     }
     if (x > boardWidth - wallPadding) {
       x = boardWidth - wallPadding;
-      vx = -Math.abs(vx) * bounce;
+      vx = -Math.abs(vx) * 0.5 - 1;
     }
 
     // Check if ball reached bottom
@@ -195,7 +195,7 @@ export const PlinkoGame = () => {
     }
 
     return { id, x, y, vx, vy, active };
-  }, [pegs, boardWidth, endY, targetBucket, bucketWidth, startY]);
+  }, [pegs, boardWidth, endY, targetBucket, bucketWidth, startY, effectiveBallRadius, pegRadius]);
 
   // Animation loop
   useEffect(() => {
@@ -360,24 +360,24 @@ export const PlinkoGame = () => {
               />
             ))}
 
-            {/* Balls with realistic physics */}
+            {/* Balls - White Glowing */}
             <AnimatePresence>
               {balls.filter(b => b.active || b.y < endY + 20).map((ball) => (
                 <motion.div
                   key={ball.id}
-                  className="absolute rounded-full shadow-lg"
+                  className="absolute rounded-full"
                   style={{ 
                     left: ball.x,
                     top: ball.y,
-                    width: ballRadius * 2,
-                    height: ballRadius * 2,
+                    width: effectiveBallRadius * 2,
+                    height: effectiveBallRadius * 2,
                     transform: 'translate(-50%, -50%)',
-                    background: 'radial-gradient(circle at 30% 30%, #ffd700, #ff8c00)',
-                    boxShadow: '0 4px 12px rgba(255,165,0,0.6), inset 0 -2px 6px rgba(0,0,0,0.3)',
+                    background: 'radial-gradient(circle at 30% 30%, #ffffff, #e0e0e0)',
+                    boxShadow: '0 0 15px 5px rgba(255,255,255,0.8), 0 0 30px 10px rgba(255,255,255,0.5), 0 0 45px 15px rgba(200,200,255,0.3)',
                     zIndex: 20
                   }}
                   initial={{ scale: 0 }}
-                  animate={{ scale: 1, rotate: ball.vx * 10 }}
+                  animate={{ scale: 1 }}
                   exit={{ scale: 0, opacity: 0 }}
                 />
               ))}
