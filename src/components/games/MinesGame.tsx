@@ -220,12 +220,9 @@ export const MinesGame = () => {
       // Auto cash out when all safe tiles revealed
       if (newRevealed >= safeSpots) {
         const payout = betAmount * newMultiplier;
-        updateBalance(payout).then(() => {
-          triggerWinConfetti();
-          toast.success(`🎉 All diamonds found! Won NPR ${payout.toFixed(2)}!`);
-        });
         
-        supabase.from('bet_logs').insert({
+        // Log bet FIRST before updating balance
+        await supabase.from('bet_logs').insert({
           user_id: profile?.id,
           game: 'mines',
           bet_amount: betAmount,
@@ -233,10 +230,14 @@ export const MinesGame = () => {
           payout: payout
         });
         
+        await updateBalance(payout);
+        triggerWinConfetti();
+        toast.success(`🎉 All diamonds found! Won NPR ${payout.toFixed(2)}!`);
+        
         setGrid(newGrid.map(t => ({ ...t, revealed: true })));
         setGameActive(false);
         setGameOver(true);
-        refreshProfile();
+        await refreshProfile();
       }
     }
   };
