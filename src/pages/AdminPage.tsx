@@ -25,7 +25,10 @@ import {
   Settings,
   Save,
   Gamepad2,
-  Calendar
+  Calendar,
+  Target,
+  Ban,
+  Zap
 } from "lucide-react";
 
 interface Transaction {
@@ -76,6 +79,14 @@ interface UserWinRate {
   win_probability: number;
 }
 
+interface UserBettingControl {
+  id: string;
+  user_id: string;
+  max_profit_limit: number | null;
+  forced_wins_remaining: number;
+  forced_losses_remaining: number;
+}
+
 const GAME_NAMES: Record<string, string> = {
   slots: 'Lucky Slots',
   roulette: 'Roulette',
@@ -98,6 +109,11 @@ const AdminPage = () => {
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedGame, setSelectedGame] = useState<string>('slots');
   const [userSpecificRate, setUserSpecificRate] = useState<number>(15);
+  const [userBettingControls, setUserBettingControls] = useState<UserBettingControl[]>([]);
+  const [selectedControlUserId, setSelectedControlUserId] = useState<string>('');
+  const [maxProfitLimit, setMaxProfitLimit] = useState<number | null>(null);
+  const [forcedWins, setForcedWins] = useState<number>(0);
+  const [forcedLosses, setForcedLosses] = useState<number>(0);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalBets: 0,
@@ -116,6 +132,7 @@ const AdminPage = () => {
       fetchData();
       fetchGameSettings();
       fetchUserWinRates();
+      fetchUserBettingControls();
     }
   }, [isAdmin]);
 
@@ -148,6 +165,70 @@ const AdminPage = () => {
     
     if (data) {
       setUserWinRates(data as UserWinRate[]);
+    }
+  };
+
+  const fetchUserBettingControls = async () => {
+    const { data } = await supabase
+      .from('user_betting_controls')
+      .select('*');
+    
+    if (data) {
+      setUserBettingControls(data as UserBettingControl[]);
+    }
+  };
+
+  const saveUserBettingControl = async () => {
+    if (!selectedControlUserId) {
+      toast.error("Please select a user");
+      return;
+    }
+
+    const { error } = await supabase
+      .from('user_betting_controls')
+      .upsert({
+        user_id: selectedControlUserId,
+        max_profit_limit: maxProfitLimit,
+        forced_wins_remaining: forcedWins,
+        forced_losses_remaining: forcedLosses,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+
+    if (error) {
+      toast.error("Failed to save betting control");
+    } else {
+      toast.success("Betting control saved!");
+      fetchUserBettingControls();
+      setSelectedControlUserId('');
+      setMaxProfitLimit(null);
+      setForcedWins(0);
+      setForcedLosses(0);
+    }
+  };
+
+  const removeUserBettingControl = async (userId: string) => {
+    const { error } = await supabase
+      .from('user_betting_controls')
+      .delete()
+      .eq('user_id', userId);
+
+    if (!error) {
+      toast.success("Betting control removed");
+      fetchUserBettingControls();
+    }
+  };
+
+  const loadUserBettingControl = (userId: string) => {
+    const control = userBettingControls.find(c => c.user_id === userId);
+    setSelectedControlUserId(userId);
+    if (control) {
+      setMaxProfitLimit(control.max_profit_limit);
+      setForcedWins(control.forced_wins_remaining);
+      setForcedLosses(control.forced_losses_remaining);
+    } else {
+      setMaxProfitLimit(null);
+      setForcedWins(0);
+      setForcedLosses(0);
     }
   };
 
@@ -558,6 +639,118 @@ const AdminPage = () => {
                                 size="sm" 
                                 className="h-5 w-5 p-0"
                                 onClick={() => removeUserWinRate(rate.user_id, rate.game)}
+                              >
+                                <XCircle className="w-3 h-3 text-destructive" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* User Betting Controls */}
+                <div className="space-y-3 border-t border-border/50 pt-4">
+                  <Label className="text-sm sm:text-base font-semibold flex items-center gap-2">
+                    <Target className="w-4 h-4" />
+                    User Betting Controls
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Set max profit limits and force next N bets to be wins or losses for specific users
+                  </p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">User</Label>
+                      <select 
+                        className="h-9 px-3 rounded-md border border-border bg-background text-sm"
+                        value={selectedControlUserId}
+                        onChange={(e) => loadUserBettingControl(e.target.value)}
+                      >
+                        <option value="">Select user...</option>
+                        {profiles.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.display_name || p.email?.split('@')[0]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs flex items-center gap-1">
+                        <Ban className="w-3 h-3" /> Max Profit (NPR)
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="No limit"
+                        value={maxProfitLimit ?? ''}
+                        onChange={(e) => setMaxProfitLimit(e.target.value ? Number(e.target.value) : null)}
+                        className="w-28 h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs flex items-center gap-1 text-secondary">
+                        <Zap className="w-3 h-3" /> Forced Wins
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={forcedWins}
+                        onChange={(e) => setForcedWins(Number(e.target.value))}
+                        className="w-20 h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs flex items-center gap-1 text-destructive">
+                        <Zap className="w-3 h-3" /> Forced Losses
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={forcedLosses}
+                        onChange={(e) => setForcedLosses(Number(e.target.value))}
+                        className="w-20 h-9"
+                      />
+                    </div>
+                    <Button onClick={saveUserBettingControl} variant="gold" size="sm">
+                      <Save className="w-4 h-4 mr-1" />
+                      Save
+                    </Button>
+                  </div>
+
+                  {/* Active Betting Controls */}
+                  {userBettingControls.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs text-muted-foreground">Active Betting Controls:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {userBettingControls.map((control) => {
+                          const player = profiles.find(p => p.id === control.user_id);
+                          return (
+                            <div key={control.user_id} className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg text-xs border border-primary/30">
+                              <span className="font-medium">{player?.display_name || player?.email?.split('@')[0]}</span>
+                              {control.max_profit_limit !== null && (
+                                <>
+                                  <span className="text-muted-foreground">•</span>
+                                  <span className="text-amber-400">Max: NPR {formatCredits(control.max_profit_limit)}</span>
+                                </>
+                              )}
+                              {control.forced_wins_remaining > 0 && (
+                                <>
+                                  <span className="text-muted-foreground">•</span>
+                                  <span className="text-secondary">{control.forced_wins_remaining} wins</span>
+                                </>
+                              )}
+                              {control.forced_losses_remaining > 0 && (
+                                <>
+                                  <span className="text-muted-foreground">•</span>
+                                  <span className="text-destructive">{control.forced_losses_remaining} losses</span>
+                                </>
+                              )}
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-5 w-5 p-0 ml-1"
+                                onClick={() => removeUserBettingControl(control.user_id)}
                               >
                                 <XCircle className="w-3 h-3 text-destructive" />
                               </Button>

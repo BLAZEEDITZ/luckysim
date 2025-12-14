@@ -122,6 +122,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_betting_controls: {
+        Row: {
+          created_at: string
+          forced_losses_remaining: number | null
+          forced_wins_remaining: number | null
+          id: string
+          max_profit_limit: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          forced_losses_remaining?: number | null
+          forced_wins_remaining?: number | null
+          id?: string
+          max_profit_limit?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          forced_losses_remaining?: number | null
+          forced_wins_remaining?: number | null
+          id?: string
+          max_profit_limit?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string

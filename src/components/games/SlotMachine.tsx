@@ -10,7 +10,10 @@ import {
   formatCredits,
   getRandomSlotSymbol,
   SLOT_SYMBOLS,
-  getWinProbability
+  getWinProbability,
+  getUserBettingControl,
+  decrementForcedOutcome,
+  checkMaxProfitLimit
 } from "@/lib/gameUtils";
 import { Coins, RotateCcw, Minus, Plus, Star, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -58,7 +61,27 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     const interval = 80;
     let elapsed = 0;
 
-    const winProb = await getWinProbability('slots', user?.id);
+    // Check for forced outcomes first
+    const bettingControl = await getUserBettingControl(user.id);
+    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    
+    // Check max profit limit
+    if (bettingControl?.maxProfitLimit !== null) {
+      const maxPayout = bet * 25; // Max slot multiplier
+      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
+      if (wouldExceedLimit && forcedOutcome !== false) {
+        forcedOutcome = false;
+      }
+    }
+
+    let winProb = await getWinProbability('slots', user?.id);
+    
+    // Override win probability based on forced outcome
+    if (forcedOutcome === true) {
+      winProb = 0.95;
+    } else if (forcedOutcome === false) {
+      winProb = 0.05;
+    }
 
     const spinInterval = setInterval(async () => {
       // Animate all reels
@@ -160,7 +183,10 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
         
         if (won) {
           await updateBalance(payout);
+          await decrementForcedOutcome(user.id, true);
           toast.success(`${message} Won NPR ${formatCredits(payout)}!`);
+        } else {
+          await decrementForcedOutcome(user.id, false);
         }
 
         await supabase.from('bet_logs').insert({

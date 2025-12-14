@@ -10,7 +10,10 @@ import {
   formatCredits,
   ROULETTE_NUMBERS,
   getRouletteColor,
-  getWinProbability
+  getWinProbability,
+  getUserBettingControl,
+  decrementForcedOutcome,
+  checkMaxProfitLimit
 } from "@/lib/gameUtils";
 import { Coins, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -54,7 +57,27 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
     setResult(null);
     await updateBalance(-bet);
 
-    const winProb = await getWinProbability('roulette', user?.id);
+    // Check for forced outcomes first
+    const bettingControl = await getUserBettingControl(user.id);
+    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    
+    // Check max profit limit
+    if (bettingControl?.maxProfitLimit !== null) {
+      const maxPayout = bet * 35; // Max roulette multiplier
+      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
+      if (wouldExceedLimit && forcedOutcome !== false) {
+        forcedOutcome = false;
+      }
+    }
+
+    let winProb = await getWinProbability('roulette', user?.id);
+    
+    // Override win probability based on forced outcome
+    if (forcedOutcome === true) {
+      winProb = 0.95;
+    } else if (forcedOutcome === false) {
+      winProb = 0.05;
+    }
 
     // Animate wheel spin
     const spinDuration = 4000;
@@ -147,6 +170,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
         }
         triggerWinConfetti();
         await updateBalance(payout);
+        await decrementForcedOutcome(user.id, true);
         toast.success(`You won NPR ${formatCredits(payout)}!`);
       } else {
         // Ensure loss
@@ -162,6 +186,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
           return true;
         });
         finalNumber = losingNumbers[Math.floor(Math.random() * losingNumbers.length)] ?? 0;
+        await decrementForcedOutcome(user.id, false);
         setShake(true);
         setTimeout(() => setShake(false), 500);
       }

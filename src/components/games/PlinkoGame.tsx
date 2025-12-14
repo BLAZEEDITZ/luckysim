@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti, getWinProbability } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getWinProbability, getUserBettingControl, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { Circle, Zap, Shield, Flame } from "lucide-react";
 
@@ -236,7 +236,12 @@ export const PlinkoGame = () => {
       setLastBucketIndex(bucketIndex);
       
       // Update balance and log bet
-      updateBalance(payout).then(() => {
+      updateBalance(payout).then(async () => {
+        // Decrement forced outcome
+        if (user) {
+          await decrementForcedOutcome(user.id, won);
+        }
+        
         if (multiplier >= 5) {
           triggerWinConfetti();
           toast.success(`🎉 ${multiplier}x - Won NPR ${formatCredits(payout)}!`);
@@ -281,8 +286,29 @@ export const PlinkoGame = () => {
     setLastMultiplier(null);
     setLastBucketIndex(null);
 
+    // Check for forced outcomes first
+    const bettingControl = user?.id ? await getUserBettingControl(user.id) : null;
+    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    
+    // Check max profit limit
+    if (user?.id && bettingControl?.maxProfitLimit !== null) {
+      const maxPayout = betAmount * Math.max(...multipliers);
+      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
+      if (wouldExceedLimit && forcedOutcome !== false) {
+        forcedOutcome = false;
+      }
+    }
+
     // Get win probability and calculate target - THIS ENFORCES THE WIN RATE
-    const winProb = await getWinProbability('plinko', user?.id);
+    let winProb = await getWinProbability('plinko', user?.id);
+    
+    // Override win probability based on forced outcome
+    if (forcedOutcome === true) {
+      winProb = 0.95;
+    } else if (forcedOutcome === false) {
+      winProb = 0.05;
+    }
+    
     const shouldWin = Math.random() < winProb;
     
     // Determine target bucket based on win/loss decision
