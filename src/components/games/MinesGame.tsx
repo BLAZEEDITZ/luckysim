@@ -44,33 +44,41 @@ export const MinesGame = () => {
   const effectiveMineCount = Math.min(mineCount, maxMines);
 
   // Max multiplier caps: 3x3=16x, 4x4=24x, 5x5=48x
-  const getMaxMultiplierCap = useCallback((gridTotal: number) => {
-    if (gridTotal === 9) return 16;   // 3x3
-    if (gridTotal === 16) return 24;  // 4x4
-    if (gridTotal === 25) return 48;  // 5x5
-    return 24; // fallback
+  const getMaxMultiplierCap = useCallback((gridTotal: number, mines: number) => {
+    // Base caps per grid
+    const baseCap = gridTotal === 9 ? 16 : gridTotal === 16 ? 24 : 48;
+    // More mines = higher potential multiplier (scaled by mine ratio)
+    const mineRatio = mines / (gridTotal - 1);
+    // Scale cap: low mines = lower cap, high mines = full cap
+    return Math.max(2, baseCap * (0.3 + mineRatio * 0.7));
   }, []);
 
   const calculateMultiplier = useCallback((revealed: number, mines: number, total: number) => {
     if (revealed === 0) return 1;
     
     const safeSpots = total - mines;
-    const maxCap = getMaxMultiplierCap(total);
+    const maxCap = getMaxMultiplierCap(total, mines);
     
-    // Prevent edge cases with too many mines
-    if (mines >= total - 1) {
-      // Last mine scenarios - cap progressively
-      const progress = revealed / Math.max(1, safeSpots);
-      return Math.min(1 + progress * (maxCap - 1), maxCap);
-    }
+    if (safeSpots <= 0) return 1;
     
+    // Base multiplier from revealed tiles
     let multiplier = 1;
+    
+    // More mines = higher base multiplier per reveal
+    const mineBonus = 1 + (mines / total) * 0.5;
     
     for (let i = 0; i < revealed; i++) {
       const remainingSafe = safeSpots - i;
       const remainingTotal = total - i;
       if (remainingSafe <= 0 || remainingTotal <= 0) break;
-      multiplier *= remainingTotal / remainingSafe;
+      // Risk-based multiplier: higher mines = higher growth
+      const riskFactor = remainingTotal / remainingSafe;
+      multiplier *= riskFactor * mineBonus;
+    }
+    
+    // Progressive scaling for high mine counts
+    if (mines >= total * 0.6) {
+      multiplier *= 1 + (revealed / safeSpots) * 0.3;
     }
     
     // Apply house edge
@@ -399,12 +407,24 @@ export const MinesGame = () => {
           )}
 
           <div className="p-3 sm:p-4 bg-muted/50 rounded-lg text-xs sm:text-sm text-muted-foreground">
-            <p className="font-semibold mb-2">How to Play:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Click tiles to reveal diamonds</li>
-              <li>Avoid the mines!</li>
-              <li>Cash out anytime to secure winnings</li>
-              <li>Max: 16x (3x3), 24x (4x4), 48x (5x5)</li>
+            <p className="font-semibold mb-2 text-center">How to Play</p>
+            <ul className="space-y-1 text-left pl-2">
+              <li className="flex items-start gap-2">
+                <span className="text-primary">•</span>
+                <span>Click tiles to reveal diamonds</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-destructive">•</span>
+                <span>Avoid the mines!</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-secondary">•</span>
+                <span>Cash out anytime to secure winnings</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary">•</span>
+                <span>More mines = Higher multiplier!</span>
+              </li>
             </ul>
           </div>
         </CardContent>
