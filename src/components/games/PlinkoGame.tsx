@@ -235,7 +235,7 @@ export const PlinkoGame = () => {
       setLastMultiplier(multiplier);
       setLastBucketIndex(bucketIndex);
       
-      // Update balance
+      // Update balance and log bet
       updateBalance(payout).then(() => {
         if (multiplier >= 5) {
           triggerWinConfetti();
@@ -247,7 +247,7 @@ export const PlinkoGame = () => {
         }
       });
 
-      // Log bet
+      // Log bet to database
       if (user) {
         supabase.from('bet_logs').insert({
           user_id: user.id,
@@ -255,6 +255,8 @@ export const PlinkoGame = () => {
           bet_amount: betAmount,
           won,
           payout
+        }).then(() => {
+          // Bet logged successfully
         });
       }
 

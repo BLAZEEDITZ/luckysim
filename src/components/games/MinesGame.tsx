@@ -43,14 +43,25 @@ export const MinesGame = () => {
   // Adjust mine count when grid size changes
   const effectiveMineCount = Math.min(mineCount, maxMines);
 
+  // Max multiplier caps: 3x3=16x, 4x4=24x, 5x5=48x
+  const getMaxMultiplierCap = useCallback((gridTotal: number) => {
+    if (gridTotal === 9) return 16;   // 3x3
+    if (gridTotal === 16) return 24;  // 4x4
+    if (gridTotal === 25) return 48;  // 5x5
+    return 24; // fallback
+  }, []);
+
   const calculateMultiplier = useCallback((revealed: number, mines: number, total: number) => {
     if (revealed === 0) return 1;
     
     const safeSpots = total - mines;
+    const maxCap = getMaxMultiplierCap(total);
     
     // Prevent edge cases with too many mines
     if (mines >= total - 1) {
-      return revealed > 0 ? Math.min(mines * 2, 50) : 1;
+      // Last mine scenarios - cap progressively
+      const progress = revealed / Math.max(1, safeSpots);
+      return Math.min(1 + progress * (maxCap - 1), maxCap);
     }
     
     let multiplier = 1;
@@ -62,22 +73,11 @@ export const MinesGame = () => {
       multiplier *= remainingTotal / remainingSafe;
     }
     
-    // Apply house edge and cap multipliers fairly
+    // Apply house edge
     multiplier *= 0.97;
     
-    // Fair caps based on mine count and grid size
-    let maxMultiplier: number;
-    if (mines === 1) {
-      maxMultiplier = 24;
-    } else if (mines >= total - 2) {
-      // Second-last and last mines: cap at reasonable values
-      maxMultiplier = Math.min(mines * 5, 100);
-    } else {
-      maxMultiplier = Math.min(mines * 12, 500);
-    }
-    
-    return Math.min(Math.max(multiplier, 1), maxMultiplier);
-  }, []);
+    return Math.min(Math.max(multiplier, 1), maxCap);
+  }, [getMaxMultiplierCap]);
 
   const maxPossibleMultiplier = useMemo(() => {
     const safeSpots = totalTiles - effectiveMineCount;
@@ -208,10 +208,11 @@ export const MinesGame = () => {
         </CardHeader>
         <CardContent className="p-2 sm:p-6">
           <div 
-            className="gap-1 sm:gap-2 max-w-xs sm:max-w-md mx-auto"
+            className="max-w-xs sm:max-w-md mx-auto"
             style={{ 
               display: 'grid',
-              gridTemplateColumns: `repeat(${gridCols}, 1fr)`
+              gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+              gap: gridCols === 3 ? '8px' : gridCols === 4 ? '6px' : '4px'
             }}
           >
             {(gameActive || gameOver) ? (
@@ -258,7 +259,7 @@ export const MinesGame = () => {
                   key={index}
                   className="aspect-square rounded-md sm:rounded-lg bg-muted/50 flex items-center justify-center"
                 >
-                  <span className="text-muted-foreground text-lg sm:text-2xl">?</span>
+                  <span className="text-muted-foreground text-base sm:text-xl">?</span>
                 </div>
               ))
             )}
@@ -403,7 +404,7 @@ export const MinesGame = () => {
               <li>Click tiles to reveal diamonds</li>
               <li>Avoid the mines!</li>
               <li>Cash out anytime to secure winnings</li>
-              <li>More mines = higher multiplier (up to 1000x)</li>
+              <li>Max: 16x (3x3), 24x (4x4), 48x (5x5)</li>
             </ul>
           </div>
         </CardContent>
