@@ -148,33 +148,51 @@ export const MinesGame = () => {
     const currentReveals = revealedCount;
     const safeSpots = totalTiles - effectiveMineCount;
     
-    // DYNAMIC MINE PLACEMENT BASED ON WIN PROBABILITY
-    // If player has exceeded their max safe reveals, force this tile to be a mine
-    let tile = grid[index];
     let newGrid = [...grid];
+    let tileIsMine = false;
     
-    if (maxSafeReveals !== null && currentReveals >= maxSafeReveals) {
-      // Player exceeded allowed safe reveals - this click MUST hit a mine
-      // Dynamically make this tile a mine
-      console.log(`Forcing mine at position ${index} - exceeded max safe reveals (${currentReveals} >= ${maxSafeReveals})`);
-      tile = { ...tile, isMine: true };
-      newGrid[index] = { ...tile, revealed: true };
-    } else {
-      // Check if this tile was originally a mine
-      if (tile.isMine) {
-        // If player hasn't exceeded max safe reveals but hit a random mine,
-        // we can optionally move the mine to keep the game fair within probability
-        // But since maxSafeReveals already accounts for probability, we keep it as mine
-        newGrid[index] = { ...tile, revealed: true };
+    // MATHEMATICAL PROBABILITY ENFORCEMENT:
+    // maxSafeReveals determines exactly how many tiles player can safely reveal
+    // If currentReveals < maxSafeReveals: player is GUARANTEED safe (relocate mine if needed)
+    // If currentReveals >= maxSafeReveals: player MUST hit a mine
+    
+    if (maxSafeReveals !== null) {
+      if (currentReveals >= maxSafeReveals) {
+        // Player exceeded allowed safe reveals - FORCE this tile to be a mine
+        console.log(`Forcing mine at position ${index} - exceeded max safe reveals (${currentReveals} >= ${maxSafeReveals})`);
+        tileIsMine = true;
+        newGrid[index] = { ...newGrid[index], isMine: true, revealed: true };
       } else {
-        newGrid[index] = { ...tile, revealed: true };
+        // Player is within safe reveal limit - GUARANTEE this tile is safe
+        // If the tile was originally a mine, relocate it
+        if (newGrid[index].isMine) {
+          console.log(`Relocating mine from position ${index} - player within safe limit (${currentReveals} < ${maxSafeReveals})`);
+          // Find an unrevealed non-mine tile to move the mine to
+          const unrevealedSafeTiles = newGrid
+            .map((t, i) => ({ ...t, originalIndex: i }))
+            .filter(t => !t.revealed && !t.isMine && t.originalIndex !== index);
+          
+          if (unrevealedSafeTiles.length > 0) {
+            const randomTarget = unrevealedSafeTiles[Math.floor(Math.random() * unrevealedSafeTiles.length)];
+            newGrid[randomTarget.originalIndex] = { ...newGrid[randomTarget.originalIndex], isMine: true };
+          }
+          newGrid[index] = { ...newGrid[index], isMine: false, revealed: true };
+          tileIsMine = false;
+        } else {
+          newGrid[index] = { ...newGrid[index], revealed: true };
+          tileIsMine = false;
+        }
       }
+    } else {
+      // No probability control - use original mine placement
+      tileIsMine = newGrid[index].isMine;
+      newGrid[index] = { ...newGrid[index], revealed: true };
     }
     
     setGrid(newGrid);
     setClickOrder([...clickOrder, index]);
 
-    if (tile.isMine) {
+    if (tileIsMine) {
       setGameOver(true);
       setGameActive(false);
       
