@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +12,7 @@ import { formatCredits } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { User, Camera, Save, Coins, Calendar, Mail, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { format, isToday, isYesterday, parseISO } from "date-fns";
 
 interface BetLog {
   id: string;
@@ -20,6 +21,10 @@ interface BetLog {
   won: boolean;
   payout: number;
   created_at: string;
+}
+
+interface GroupedBets {
+  [key: string]: BetLog[];
 }
 
 const ProfilePage = () => {
@@ -51,8 +56,7 @@ const ProfilePage = () => {
       .from("bet_logs")
       .select("*")
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
+      .order("created_at", { ascending: false });
 
     if (data) {
       setBetLogs(data);
@@ -77,6 +81,31 @@ const ProfilePage = () => {
       });
     }
   };
+
+  // Group bets by date
+  const groupedBets = useMemo(() => {
+    const groups: GroupedBets = {};
+    
+    betLogs.forEach((bet) => {
+      const date = parseISO(bet.created_at);
+      let dateKey: string;
+      
+      if (isToday(date)) {
+        dateKey = "Today";
+      } else if (isYesterday(date)) {
+        dateKey = "Yesterday";
+      } else {
+        dateKey = format(date, "MMMM d, yyyy");
+      }
+      
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(bet);
+    });
+    
+    return groups;
+  }, [betLogs]);
 
   if (!loading && !user) {
     navigate("/auth");
@@ -368,7 +397,7 @@ const ProfilePage = () => {
               </Card>
             </motion.div>
 
-            {/* Recent Bets */}
+            {/* Recent Bets - Grouped by Day */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -377,38 +406,56 @@ const ProfilePage = () => {
               <Card className="border-accent/20">
                 <CardHeader className="py-3 sm:py-4">
                   <CardTitle className="text-lg sm:text-xl">
-                    My Recent Bets
+                    My Betting History ({betLogs.length} bets)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 sm:p-6">
                   {betLogs.length > 0 ? (
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                      {betLogs.map((log) => (
-                        <div
-                          key={log.id}
-                          className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
-                                log.won
-                                  ? "bg-secondary/20 text-secondary"
-                                  : "bg-destructive/20 text-destructive"
-                              }`}
-                            >
-                              {log.won ? "WIN" : "LOSS"}
-                            </span>
-                            <span className="capitalize text-muted-foreground truncate">
-                              {log.game}
-                            </span>
-                          </div>
-                          <div className="text-right shrink-0 ml-2">
-                            <span className="font-medium">NPR {log.bet_amount}</span>
-                            {log.won && (
-                              <span className="text-secondary ml-2">
-                                +NPR {log.payout}
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto">
+                      {Object.entries(groupedBets).map(([dateKey, bets]) => (
+                        <div key={dateKey}>
+                          <div className="sticky top-0 bg-card/95 backdrop-blur-sm py-2 mb-2 border-b border-border/50">
+                            <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                              <Calendar className="w-4 h-4" />
+                              {dateKey}
+                              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                                {bets.length} {bets.length === 1 ? 'bet' : 'bets'}
                               </span>
-                            )}
+                            </h3>
+                          </div>
+                          <div className="space-y-2">
+                            {bets.map((log) => (
+                              <div
+                                key={log.id}
+                                className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span
+                                    className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
+                                      log.won
+                                        ? "bg-secondary/20 text-secondary"
+                                        : "bg-destructive/20 text-destructive"
+                                    }`}
+                                  >
+                                    {log.won ? "WIN" : "LOSS"}
+                                  </span>
+                                  <span className="capitalize text-muted-foreground truncate">
+                                    {log.game}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {format(parseISO(log.created_at), "h:mm a")}
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0 ml-2">
+                                  <span className="font-medium">NPR {log.bet_amount}</span>
+                                  {log.won && (
+                                    <span className="text-secondary ml-2">
+                                      +NPR {log.payout}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
