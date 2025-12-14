@@ -17,6 +17,7 @@ import {
   decrementForcedOutcome,
   checkMaxProfitLimit
 } from "@/lib/gameUtils";
+import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { Coins, Minus, Plus, RotateCcw, Spade, Heart } from "lucide-react";
 import { toast } from "sonner";
 
@@ -68,6 +69,7 @@ const PlayingCard = ({ card, hidden = false, isNew = false }: { card: CardType; 
 
 export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
   const { profile, user, updateBalance } = useAuth();
+  const { playCardDeal, playWin, playBigWin, playLose, playChip } = useSoundEffects();
   const [bet, setBet] = useState(gameConfig.minBet);
   const [deck, setDeck] = useState<CardType[]>([]);
   const [playerHand, setPlayerHand] = useState<CardType[]>([]);
@@ -106,6 +108,12 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setPhase('playing');
     setResult(null);
     
+    // Play card deal sounds
+    playCardDeal();
+    setTimeout(() => playCardDeal(), 200);
+    setTimeout(() => playCardDeal(), 400);
+    setTimeout(() => playCardDeal(), 600);
+    
     // Check for options
     setCanDouble(pHand.length === 2 && bet * 2 <= profile.balance);
     setCanSplit(pHand.length === 2 && pHand[0].value === pHand[1].value);
@@ -127,16 +135,18 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
       await updateBalance(blackjackPayout);
       await logBet(true, blackjackPayout);
       triggerWinConfetti();
+      playBigWin();
       setResult({ won: true, amount: blackjackPayout, message: "BLACKJACK!" });
       toast.success(`Blackjack! Won NPR ${formatCredits(blackjackPayout)}!`);
     }
-  }, [bet, user, profile, updateBalance]);
+  }, [bet, user, profile, updateBalance, playCardDeal, playBigWin]);
 
   const endGame = async (won: boolean, message: string, push: boolean = false) => {
     const payout = push ? bet : (won ? Math.floor(bet * gameConfig.payoutMultiplier) : 0);
     
     if (won) {
       triggerWinConfetti();
+      playWin();
       await updateBalance(payout);
       if (user?.id) await decrementForcedOutcome(user.id, true);
       toast.success(`You won NPR ${formatCredits(payout)}!`);
@@ -145,6 +155,7 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
       toast.info("Push! Bet returned.");
     } else {
       if (user?.id) await decrementForcedOutcome(user.id, false);
+      playLose();
       setShake(true);
       setTimeout(() => setShake(false), 500);
     }

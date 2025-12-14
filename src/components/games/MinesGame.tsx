@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCredits, triggerWinConfetti, getWinProbability, getUserBettingControl, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
+import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
 import { Bomb, Diamond, Coins, RotateCcw, Grid3X3 } from "lucide-react";
 
@@ -26,6 +27,7 @@ interface Tile {
 
 export const MinesGame = () => {
   const { profile, user, updateBalance, refreshProfile } = useAuth();
+  const { playReveal, playExplosion, playWin, playBigWin, playCashout, playChip } = useSoundEffects();
   const [betAmount, setBetAmount] = useState(10);
   const [mineCount, setMineCount] = useState(3);
   const [gridSize, setGridSize] = useState<GridSize>('large');
@@ -219,6 +221,7 @@ export const MinesGame = () => {
     setClickOrder([...clickOrder, index]);
 
     if (tileIsMine) {
+      playExplosion();
       setGameOver(true);
       setGameActive(false);
       
@@ -243,6 +246,7 @@ export const MinesGame = () => {
 
       toast.error("💥 BOOM! You hit a mine!");
     } else {
+      playReveal();
       const newRevealed = currentReveals + 1;
       setRevealedCount(newRevealed);
       const newMultiplier = calculateMultiplier(newRevealed, effectiveMineCount, totalTiles);
@@ -268,6 +272,7 @@ export const MinesGame = () => {
         
         await updateBalance(payout);
         triggerWinConfetti();
+        playBigWin();
         toast.success(`🎉 All diamonds found! Won NPR ${payout.toFixed(2)}!`);
         
         setGrid(newGrid.map(t => ({ ...t, revealed: true })));
@@ -281,6 +286,7 @@ export const MinesGame = () => {
   const cashOut = async () => {
     if (!gameActive || revealedCount === 0) return;
 
+    playCashout();
     const payout = betAmount * currentMultiplier;
     await updateBalance(payout);
     
@@ -298,6 +304,7 @@ export const MinesGame = () => {
     }
 
     triggerWinConfetti();
+    playWin();
     toast.success(`Cashed out NPR ${payout.toFixed(2)}!`);
 
     setGrid(grid.map(t => ({ ...t, revealed: true })));

@@ -15,6 +15,7 @@ import {
   decrementForcedOutcome,
   checkMaxProfitLimit
 } from "@/lib/gameUtils";
+import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { Coins, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,6 +38,7 @@ interface ActiveBet {
 
 export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
   const { profile, user, updateBalance } = useAuth();
+  const { playSpin, playRouletteBall, playWin, playBigWin, playLose, playChip } = useSoundEffects();
   const [bet, setBet] = useState(gameConfig.minBet);
   const [betType, setBetType] = useState<BetType>('red');
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
@@ -55,6 +57,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
 
     setSpinning(true);
     setResult(null);
+    playSpin();
     await updateBalance(-bet);
 
     // Check for forced outcomes first
@@ -93,6 +96,11 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
       const eased = 1 - Math.pow(1 - progress, 3);
       setWheelRotation(startRotation + totalRotation * eased);
       setDisplayNumber(ROULETTE_NUMBERS[Math.floor(Math.random() * ROULETTE_NUMBERS.length)]);
+      
+      // Play ball sound periodically during spin
+      if (Math.random() < 0.15) {
+        playRouletteBall();
+      }
       
       if (progress < 1) {
         requestAnimationFrame(animateWheel);
@@ -169,6 +177,11 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
             finalNumber = ROULETTE_NUMBERS[Math.floor(Math.random() * ROULETTE_NUMBERS.length)];
         }
         triggerWinConfetti();
+        if (multiplier >= 10) {
+          playBigWin();
+        } else {
+          playWin();
+        }
         await updateBalance(payout);
         await decrementForcedOutcome(user.id, true);
         toast.success(`You won NPR ${formatCredits(payout)}!`);
@@ -187,6 +200,7 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
         });
         finalNumber = losingNumbers[Math.floor(Math.random() * losingNumbers.length)] ?? 0;
         await decrementForcedOutcome(user.id, false);
+        playLose();
         setShake(true);
         setTimeout(() => setShake(false), 500);
       }
