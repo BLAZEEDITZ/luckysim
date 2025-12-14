@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Header } from "@/components/layout/Header";
 import { formatCredits } from "@/lib/gameUtils";
 import { toast } from "sonner";
+import { format, isToday, isYesterday, parseISO } from "date-fns";
 import { 
   Users, 
   TrendingUp, 
@@ -23,7 +24,8 @@ import {
   ArrowUpFromLine,
   Settings,
   Save,
-  Gamepad2
+  Gamepad2,
+  Calendar
 } from "lucide-react";
 
 interface Transaction {
@@ -54,6 +56,10 @@ interface BetLog {
   payout: number;
   created_at: string;
   user_email?: string;
+}
+
+interface GroupedBets {
+  [key: string]: BetLog[];
 }
 
 interface GameWinRates {
@@ -228,8 +234,7 @@ const AdminPage = () => {
     const { data: betData } = await supabase
       .from('bet_logs')
       .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
+      .order('created_at', { ascending: false });
 
     if (profileData) {
       setProfiles(profileData as Profile[]);
@@ -341,6 +346,31 @@ const AdminPage = () => {
 
   const pendingTransactions = transactions.filter(tx => tx.status === 'pending');
   const topPlayers = profiles.slice(0, 5);
+
+  // Group bets by date
+  const groupedBets = useMemo(() => {
+    const groups: GroupedBets = {};
+    
+    betLogs.forEach((bet) => {
+      const date = parseISO(bet.created_at);
+      let dateKey: string;
+      
+      if (isToday(date)) {
+        dateKey = "Today";
+      } else if (isYesterday(date)) {
+        dateKey = "Yesterday";
+      } else {
+        dateKey = format(date, "MMMM d, yyyy");
+      }
+      
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(bet);
+    });
+    
+    return groups;
+  }, [betLogs]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -678,7 +708,7 @@ const AdminPage = () => {
               </Card>
             </motion.div>
 
-            {/* Recent Bets */}
+            {/* All Bets - Grouped by Day */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -688,52 +718,70 @@ const AdminPage = () => {
                 <CardHeader className="border-b border-border/50 py-3 sm:py-4">
                   <CardTitle className="flex items-center gap-2 text-accent text-lg sm:text-xl">
                     <BarChart3 className="w-5 h-5" />
-                    Recent Bets
+                    All Bets ({betLogs.length})
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
                   {betLogs.length > 0 ? (
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                      {betLogs.slice(0, 10).map((log) => {
-                        const player = profiles.find((p) => p.id === log.user_id);
-                        return (
-                          <div 
-                            key={log.id}
-                            className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
-                                log.won 
-                                  ? 'bg-secondary/20 text-secondary' 
-                                  : 'bg-destructive/20 text-destructive'
-                              }`}>
-                                {log.won ? 'WIN' : 'LOSS'}
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto">
+                      {Object.entries(groupedBets).map(([dateKey, bets]) => (
+                        <div key={dateKey}>
+                          <div className="sticky top-0 bg-card/95 backdrop-blur-sm py-2 mb-2 border-b border-border/50">
+                            <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                              <Calendar className="w-4 h-4" />
+                              {dateKey}
+                              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                                {bets.length} {bets.length === 1 ? 'bet' : 'bets'}
                               </span>
-                              {player?.avatar_url ? (
-                                <img 
-                                  src={player.avatar_url} 
-                                  alt="" 
-                                  className="w-6 h-6 rounded-full object-cover border border-border shrink-0"
-                                />
-                              ) : (
-                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
-                                  {(player?.display_name || player?.email || "U").slice(0, 1).toUpperCase()}
-                                </div>
-                              )}
-                              <span className="text-muted-foreground truncate">
-                                {player?.display_name || player?.email?.split("@")[0] || "Unknown"}
-                              </span>
-                              <span className="capitalize text-muted-foreground truncate">• {log.game}</span>
-                            </div>
-                            <div className="text-right shrink-0 ml-2">
-                              <span className="font-medium">NPR {log.bet_amount}</span>
-                              {log.won && (
-                                <span className="text-secondary ml-2">+NPR {log.payout}</span>
-                              )}
-                            </div>
+                            </h3>
                           </div>
-                        );
-                      })}
+                          <div className="space-y-2">
+                            {bets.map((log) => {
+                              const player = profiles.find((p) => p.id === log.user_id);
+                              return (
+                                <div 
+                                  key={log.id}
+                                  className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
+                                      log.won 
+                                        ? 'bg-secondary/20 text-secondary' 
+                                        : 'bg-destructive/20 text-destructive'
+                                    }`}>
+                                      {log.won ? 'WIN' : 'LOSS'}
+                                    </span>
+                                    {player?.avatar_url ? (
+                                      <img 
+                                        src={player.avatar_url} 
+                                        alt="" 
+                                        className="w-6 h-6 rounded-full object-cover border border-border shrink-0"
+                                      />
+                                    ) : (
+                                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
+                                        {(player?.display_name || player?.email || "U").slice(0, 1).toUpperCase()}
+                                      </div>
+                                    )}
+                                    <span className="text-muted-foreground truncate">
+                                      {player?.display_name || player?.email?.split("@")[0] || "Unknown"}
+                                    </span>
+                                    <span className="capitalize text-muted-foreground truncate">• {log.game}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {format(parseISO(log.created_at), "h:mm a")}
+                                    </span>
+                                  </div>
+                                  <div className="text-right shrink-0 ml-2">
+                                    <span className="font-medium">NPR {log.bet_amount}</span>
+                                    {log.won && (
+                                      <span className="text-secondary ml-2">+NPR {log.payout}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <p className="text-center text-muted-foreground py-6 sm:py-8">
