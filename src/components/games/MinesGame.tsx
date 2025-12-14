@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti, getWinProbability } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getWinProbability, getUserBettingControl, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { Bomb, Diamond, Coins, RotateCcw, Grid3X3 } from "lucide-react";
 
@@ -96,7 +96,33 @@ export const MinesGame = () => {
       return;
     }
 
-    const winProb = await getWinProbability('mines', user?.id);
+    // Check for forced outcomes first
+    const bettingControl = user?.id ? await getUserBettingControl(user.id) : null;
+    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    
+    // Check max profit limit
+    if (user?.id && bettingControl?.maxProfitLimit !== null) {
+      const safeSpots = totalTiles - effectiveMineCount;
+      const maxPayout = betAmount * calculateMultiplier(safeSpots, effectiveMineCount, totalTiles);
+      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
+      if (wouldExceedLimit && forcedOutcome !== false) {
+        // Force loss if would exceed profit limit
+        forcedOutcome = false;
+        console.log('Forcing loss due to max profit limit');
+      }
+    }
+
+    let winProb = await getWinProbability('mines', user?.id);
+    
+    // Override win probability based on forced outcome
+    if (forcedOutcome === true) {
+      winProb = 0.95; // High win chance for forced wins
+      console.log('Forced WIN active - high win probability');
+    } else if (forcedOutcome === false) {
+      winProb = 0.05; // Low win chance for forced losses
+      console.log('Forced LOSS active - low win probability');
+    }
+    
     const safeSpots = totalTiles - effectiveMineCount;
     
     // MATHEMATICAL PROBABILITY SYSTEM:
@@ -210,6 +236,11 @@ export const MinesGame = () => {
         payout: 0
       });
 
+      // Decrement forced loss if applicable
+      if (user?.id) {
+        await decrementForcedOutcome(user.id, false);
+      }
+
       toast.error("💥 BOOM! You hit a mine!");
     } else {
       const newRevealed = currentReveals + 1;
@@ -229,6 +260,11 @@ export const MinesGame = () => {
           won: true,
           payout: payout
         });
+        
+        // Decrement forced win if applicable
+        if (user?.id) {
+          await decrementForcedOutcome(user.id, true);
+        }
         
         await updateBalance(payout);
         triggerWinConfetti();
@@ -255,6 +291,11 @@ export const MinesGame = () => {
       won: true,
       payout: payout
     });
+
+    // Decrement forced win if applicable
+    if (user?.id) {
+      await decrementForcedOutcome(user.id, true);
+    }
 
     triggerWinConfetti();
     toast.success(`Cashed out NPR ${payout.toFixed(2)}!`);

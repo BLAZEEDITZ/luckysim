@@ -1,6 +1,95 @@
 import confetti from 'canvas-confetti';
 import { supabase } from '@/integrations/supabase/client';
 
+// Check for forced outcomes and profit limits
+export const getUserBettingControl = async (userId: string): Promise<{
+  forcedWin: boolean | null;
+  maxProfitLimit: number | null;
+  shouldDecrementWins: boolean;
+  shouldDecrementLosses: boolean;
+}> => {
+  const { data } = await supabase
+    .from('user_betting_controls')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!data) {
+    return { forcedWin: null, maxProfitLimit: null, shouldDecrementWins: false, shouldDecrementLosses: false };
+  }
+
+  // Check for forced outcomes
+  if (data.forced_wins_remaining > 0) {
+    return { 
+      forcedWin: true, 
+      maxProfitLimit: data.max_profit_limit, 
+      shouldDecrementWins: true,
+      shouldDecrementLosses: false
+    };
+  }
+  
+  if (data.forced_losses_remaining > 0) {
+    return { 
+      forcedWin: false, 
+      maxProfitLimit: data.max_profit_limit,
+      shouldDecrementWins: false,
+      shouldDecrementLosses: true
+    };
+  }
+
+  return { 
+    forcedWin: null, 
+    maxProfitLimit: data.max_profit_limit,
+    shouldDecrementWins: false,
+    shouldDecrementLosses: false
+  };
+};
+
+// Decrement forced outcomes after a bet
+export const decrementForcedOutcome = async (userId: string, isWin: boolean) => {
+  const { data } = await supabase
+    .from('user_betting_controls')
+    .select('forced_wins_remaining, forced_losses_remaining')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!data) return;
+
+  if (isWin && data.forced_wins_remaining > 0) {
+    await supabase
+      .from('user_betting_controls')
+      .update({ 
+        forced_wins_remaining: data.forced_wins_remaining - 1,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+  } else if (!isWin && data.forced_losses_remaining > 0) {
+    await supabase
+      .from('user_betting_controls')
+      .update({ 
+        forced_losses_remaining: data.forced_losses_remaining - 1,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+  }
+};
+
+// Check if user would exceed max profit limit
+export const checkMaxProfitLimit = async (userId: string, potentialPayout: number, currentBalance: number, initialBalance: number = 10): Promise<boolean> => {
+  const { data } = await supabase
+    .from('user_betting_controls')
+    .select('max_profit_limit')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!data?.max_profit_limit) return false; // No limit set
+
+  const currentProfit = currentBalance - initialBalance;
+  const potentialProfit = currentProfit + potentialPayout;
+
+  return potentialProfit > data.max_profit_limit;
+};
+
 // Fetch win probability from database for a specific game and user
 export const getWinProbability = async (game?: string, userId?: string): Promise<number> => {
   // First check for user-specific rate

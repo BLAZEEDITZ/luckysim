@@ -12,7 +12,10 @@ import {
   calculateHandValue,
   isCardRed,
   Card as CardType,
-  getWinProbability
+  getWinProbability,
+  getUserBettingControl,
+  decrementForcedOutcome,
+  checkMaxProfitLimit
 } from "@/lib/gameUtils";
 import { Coins, Minus, Plus, RotateCcw, Spade, Heart } from "lucide-react";
 import { toast } from "sonner";
@@ -135,11 +138,13 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     if (won) {
       triggerWinConfetti();
       await updateBalance(payout);
+      if (user?.id) await decrementForcedOutcome(user.id, true);
       toast.success(`You won NPR ${formatCredits(payout)}!`);
     } else if (push) {
       await updateBalance(bet);
       toast.info("Push! Bet returned.");
     } else {
+      if (user?.id) await decrementForcedOutcome(user.id, false);
       setShake(true);
       setTimeout(() => setShake(false), 500);
     }
@@ -176,7 +181,28 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setCanDouble(false);
     setCanSplit(false);
     
-    const winProb = await getWinProbability('blackjack', user?.id);
+    // Check for forced outcomes first
+    const bettingControl = user?.id ? await getUserBettingControl(user.id) : null;
+    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    
+    // Check max profit limit
+    if (user?.id && bettingControl?.maxProfitLimit !== null) {
+      const maxPayout = bet * 2.5;
+      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile?.balance ?? 0);
+      if (wouldExceedLimit && forcedOutcome !== false) {
+        forcedOutcome = false;
+      }
+    }
+    
+    let winProb = await getWinProbability('blackjack', user?.id);
+    
+    // Override win probability based on forced outcome
+    if (forcedOutcome === true) {
+      winProb = 0.95;
+    } else if (forcedOutcome === false) {
+      winProb = 0.05;
+    }
+    
     const shouldWin = Math.random() < winProb;
     const playerValue = calculateHandValue(playerHand);
     
