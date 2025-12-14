@@ -231,7 +231,7 @@ const WalletPage = () => {
                   </Button>
 
                   <p className="text-xs text-muted-foreground text-center">
-                    ⚠️ This is a simulation. Admin approval required.
+                    Admin approval required for all transactions.
                   </p>
                 </CardContent>
               </Card>
@@ -296,7 +296,7 @@ const WalletPage = () => {
                   </Button>
 
                   <p className="text-xs text-muted-foreground text-center">
-                    ⚠️ This is a simulation. Admin approval required.
+                    Admin approval required for all withdrawals.
                   </p>
                 </CardContent>
               </Card>

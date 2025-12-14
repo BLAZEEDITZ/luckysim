@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCredits, triggerWinConfetti, getWinProbability, getUserBettingControl, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
+import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
 import { Circle, Zap, Shield, Flame } from "lucide-react";
 
@@ -49,6 +50,7 @@ interface Ball {
 
 export const PlinkoGame = () => {
   const { profile, updateBalance, user } = useAuth();
+  const { playDrop, playBounce, playWin, playBigWin, playLose } = useSoundEffects();
   const [betAmount, setBetAmount] = useState(10);
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
   const [rowCount, setRowCount] = useState<RowCount>(12);
@@ -244,10 +246,13 @@ export const PlinkoGame = () => {
         
         if (multiplier >= 5) {
           triggerWinConfetti();
+          playBigWin();
           toast.success(`🎉 ${multiplier}x - Won NPR ${formatCredits(payout)}!`);
         } else if (multiplier >= 1) {
+          playWin();
           toast.success(`${multiplier}x - Won NPR ${formatCredits(payout)}!`);
         } else {
+          playLose();
           toast.error(`${multiplier}x - Returned NPR ${formatCredits(payout)}`);
         }
       });
@@ -281,6 +286,7 @@ export const PlinkoGame = () => {
       return;
     }
 
+    playDrop();
     await updateBalance(-betAmount);
     setDropping(true);
     setLastMultiplier(null);

@@ -102,8 +102,7 @@ const Index = () => {
               variants={itemVariants}
               className="text-lg sm:text-xl md:text-2xl text-muted-foreground text-center max-w-2xl mx-auto mb-8 sm:mb-10 px-4"
             >
-              Experience the thrill of casino games with virtual credits. 
-              No real money, just pure entertainment!
+              Experience the thrill of casino games with exciting rewards and endless entertainment!
             </motion.p>
             
             <motion.div 
@@ -232,9 +231,9 @@ const Index = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-8 max-w-5xl mx-auto">
               {[
                 { icon: Gift, title: 'NPR 10 Free Signup', description: 'Start playing instantly with free credits', color: 'text-primary' },
-                { icon: Shield, title: '100% Safe', description: 'No real money involved - just fun!', color: 'text-secondary' },
+                { icon: Shield, title: '100% Secure', description: 'Safe and trusted platform', color: 'text-secondary' },
                 { icon: Zap, title: 'Instant Play', description: 'No downloads required', color: 'text-amber-400' },
-                { icon: Trophy, title: 'Fair Games', description: 'Admin controlled win rates', color: 'text-purple-400' },
+                { icon: Trophy, title: 'Fair Games', description: 'Provably fair gaming', color: 'text-purple-400' },
               ].map((feature, index) => (
                 <motion.div
                   key={feature.title}

@@ -15,8 +15,8 @@ import {
   decrementForcedOutcome,
   checkMaxProfitLimit
 } from "@/lib/gameUtils";
+import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { Coins, RotateCcw, Minus, Plus, Star, Sparkles } from "lucide-react";
-import { toast } from "sonner";
 
 // Extended symbols with more variety
 const EXTENDED_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '🍉', '💎', '7️⃣', '⭐', '🎰', '👑', '💰', '🔔'];
@@ -30,8 +30,11 @@ interface SlotMachineProps {
   };
 }
 
+import { toast } from "sonner";
+
 export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
   const { profile, user, updateBalance } = useAuth();
+  const { playSpin, playReelStop, playWin, playBigWin, playLose, playChip } = useSoundEffects();
   const [bet, setBet] = useState(gameConfig.minBet);
   const [reels, setReels] = useState<string[][]>([
     ['🎰', '🍒', '💎'],
@@ -54,6 +57,7 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     setSpinning(true);
     setResult(null);
     setPaylines([]);
+    playSpin();
     
     await updateBalance(-bet);
 
@@ -158,6 +162,11 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
           }
           
           triggerWinConfetti();
+          if (multiplier >= 8) {
+            playBigWin();
+          } else {
+            playWin();
+          }
         } else {
           // Ensure no winning combination
           finalReels = Array(5).fill(null).map(() => {
@@ -172,9 +181,12 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
             // Randomize to break patterns
             finalReels[2][1] = EXTENDED_SYMBOLS.find(s => s !== middleRow[0] && s !== middleRow[1]) || '🍊';
           }
+          playLose();
           setShake(true);
           setTimeout(() => setShake(false), 500);
         }
+
+        playReelStop();
 
         setReels(finalReels);
         setPaylines(winPaylines);

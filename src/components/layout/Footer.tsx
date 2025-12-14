@@ -33,7 +33,7 @@ export const Footer = () => {
           </nav>
 
           <p className="text-sm text-muted-foreground text-center md:text-right">
-            © 2024 LuckySim. For educational purposes only.
+            © 2024 LuckySim. All rights reserved.
           </p>
         </div>
       </div>
