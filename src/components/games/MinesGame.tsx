@@ -34,6 +34,8 @@ export const MinesGame = () => {
   const [currentMultiplier, setCurrentMultiplier] = useState(1);
   const [revealedCount, setRevealedCount] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  const [maxSafeReveals, setMaxSafeReveals] = useState<number | null>(null);
+  const [clickOrder, setClickOrder] = useState<number[]>([]);
 
   const gridConfig = GRID_CONFIG[gridSize];
   const totalTiles = gridConfig.size;
@@ -45,11 +47,8 @@ export const MinesGame = () => {
 
   // Max multiplier caps: 3x3=16x, 4x4=24x, 5x5=48x
   const getMaxMultiplierCap = useCallback((gridTotal: number, mines: number) => {
-    // Base caps per grid
     const baseCap = gridTotal === 9 ? 16 : gridTotal === 16 ? 24 : 48;
-    // More mines = higher potential multiplier (scaled by mine ratio)
     const mineRatio = mines / (gridTotal - 1);
-    // Scale cap: low mines = lower cap, high mines = full cap
     return Math.max(2, baseCap * (0.3 + mineRatio * 0.7));
   }, []);
 
@@ -61,27 +60,21 @@ export const MinesGame = () => {
     
     if (safeSpots <= 0) return 1;
     
-    // Base multiplier from revealed tiles
     let multiplier = 1;
-    
-    // More mines = higher base multiplier per reveal
     const mineBonus = 1 + (mines / total) * 0.5;
     
     for (let i = 0; i < revealed; i++) {
       const remainingSafe = safeSpots - i;
       const remainingTotal = total - i;
       if (remainingSafe <= 0 || remainingTotal <= 0) break;
-      // Risk-based multiplier: higher mines = higher growth
       const riskFactor = remainingTotal / remainingSafe;
       multiplier *= riskFactor * mineBonus;
     }
     
-    // Progressive scaling for high mine counts
     if (mines >= total * 0.6) {
       multiplier *= 1 + (revealed / safeSpots) * 0.3;
     }
     
-    // Apply house edge
     multiplier *= 0.97;
     
     return Math.min(Math.max(multiplier, 1), maxCap);
@@ -104,55 +97,36 @@ export const MinesGame = () => {
     }
 
     const winProb = await getWinProbability('mines', user?.id);
-    const shouldWin = Math.random() < winProb;
+    const safeSpots = totalTiles - effectiveMineCount;
     
-    console.log(`Mines: Win probability ${winProb}, shouldWin: ${shouldWin}`);
+    // MATHEMATICAL PROBABILITY SYSTEM:
+    // Win probability determines maximum tiles player can safely reveal
+    // E.g., 10% win prob on 25 tiles with 5 mines (20 safe) = max 2 safe reveals before guaranteed mine
+    // Sometimes (based on probability), player hits mine on first click
+    
+    // Calculate max safe reveals based on win probability
+    // Lower probability = fewer safe reveals allowed
+    const calculatedMaxSafe = Math.floor(safeSpots * winProb);
+    
+    // Add randomness: sometimes allow 0 safe reveals (first click is mine)
+    // This happens more often with lower win probability
+    const firstClickMineChance = 1 - winProb; // e.g., 90% chance for 10% win prob
+    const hitFirstClick = Math.random() < (firstClickMineChance * 0.3); // 30% of loss games hit first
+    
+    const finalMaxSafe = hitFirstClick ? 0 : Math.max(0, calculatedMaxSafe);
+    
+    console.log(`Mines: Win prob ${(winProb * 100).toFixed(1)}%, Safe spots: ${safeSpots}, Max safe reveals: ${finalMaxSafe}, First click mine: ${hitFirstClick}`);
 
     await updateBalance(-betAmount);
-
-    const minePositions = new Set<number>();
     
-    if (!shouldWin) {
-      // Force loss: Place mines in common click positions (corners, center, edges)
-      const commonPositions: number[] = [];
-      
-      // Add corners first (most common clicks)
-      commonPositions.push(0); // top-left
-      commonPositions.push(gridCols - 1); // top-right
-      commonPositions.push(totalTiles - gridCols); // bottom-left
-      commonPositions.push(totalTiles - 1); // bottom-right
-      
-      // Add center positions
-      const centerRow = Math.floor(gridCols / 2);
-      const centerIdx = Math.floor(totalTiles / 2);
-      commonPositions.push(centerIdx);
-      if (gridCols % 2 === 0) {
-        commonPositions.push(centerIdx - 1);
-      }
-      
-      // Add edge midpoints
-      commonPositions.push(Math.floor(gridCols / 2)); // top edge
-      commonPositions.push(totalTiles - Math.floor(gridCols / 2) - 1); // bottom edge
-      
-      // Shuffle common positions and place mines there
-      const shuffledCommon = [...new Set(commonPositions)].sort(() => Math.random() - 0.5);
-      
-      for (const pos of shuffledCommon) {
-        if (minePositions.size >= effectiveMineCount) break;
-        if (pos >= 0 && pos < totalTiles) {
-          minePositions.add(pos);
-        }
-      }
-      
-      // Fill remaining mines randomly
-      while (minePositions.size < effectiveMineCount) {
-        minePositions.add(Math.floor(Math.random() * totalTiles));
-      }
-    } else {
-      // Allow fair chance: place mines randomly
-      while (minePositions.size < effectiveMineCount) {
-        minePositions.add(Math.floor(Math.random() * totalTiles));
-      }
+    // Store max safe reveals - mines will be placed dynamically
+    setMaxSafeReveals(finalMaxSafe);
+    setClickOrder([]);
+
+    // Initially place mines randomly - they'll be repositioned dynamically when needed
+    const minePositions = new Set<number>();
+    while (minePositions.size < effectiveMineCount) {
+      minePositions.add(Math.floor(Math.random() * totalTiles));
     }
 
     const newGrid = Array.from({ length: totalTiles }, (_, i) => ({
@@ -171,10 +145,34 @@ export const MinesGame = () => {
   const revealTile = async (index: number) => {
     if (!gameActive || grid[index].revealed || gameOver) return;
 
-    const tile = grid[index];
-    const newGrid = [...grid];
-    newGrid[index] = { ...tile, revealed: true };
+    const currentReveals = revealedCount;
+    const safeSpots = totalTiles - effectiveMineCount;
+    
+    // DYNAMIC MINE PLACEMENT BASED ON WIN PROBABILITY
+    // If player has exceeded their max safe reveals, force this tile to be a mine
+    let tile = grid[index];
+    let newGrid = [...grid];
+    
+    if (maxSafeReveals !== null && currentReveals >= maxSafeReveals) {
+      // Player exceeded allowed safe reveals - this click MUST hit a mine
+      // Dynamically make this tile a mine
+      console.log(`Forcing mine at position ${index} - exceeded max safe reveals (${currentReveals} >= ${maxSafeReveals})`);
+      tile = { ...tile, isMine: true };
+      newGrid[index] = { ...tile, revealed: true };
+    } else {
+      // Check if this tile was originally a mine
+      if (tile.isMine) {
+        // If player hasn't exceeded max safe reveals but hit a random mine,
+        // we can optionally move the mine to keep the game fair within probability
+        // But since maxSafeReveals already accounts for probability, we keep it as mine
+        newGrid[index] = { ...tile, revealed: true };
+      } else {
+        newGrid[index] = { ...tile, revealed: true };
+      }
+    }
+    
     setGrid(newGrid);
+    setClickOrder([...clickOrder, index]);
 
     if (tile.isMine) {
       setGameOver(true);
@@ -196,13 +194,12 @@ export const MinesGame = () => {
 
       toast.error("💥 BOOM! You hit a mine!");
     } else {
-      const newRevealed = revealedCount + 1;
+      const newRevealed = currentReveals + 1;
       setRevealedCount(newRevealed);
       const newMultiplier = calculateMultiplier(newRevealed, effectiveMineCount, totalTiles);
       setCurrentMultiplier(newMultiplier);
       
       // Auto cash out when all safe tiles revealed
-      const safeSpots = totalTiles - effectiveMineCount;
       if (newRevealed >= safeSpots) {
         const payout = betAmount * newMultiplier;
         updateBalance(payout).then(() => {
@@ -218,7 +215,7 @@ export const MinesGame = () => {
           payout: payout
         });
         
-        setGrid(grid.map(t => ({ ...t, revealed: true })));
+        setGrid(newGrid.map(t => ({ ...t, revealed: true })));
         setGameActive(false);
         setGameOver(true);
         refreshProfile();
@@ -255,6 +252,8 @@ export const MinesGame = () => {
     setGameOver(false);
     setRevealedCount(0);
     setCurrentMultiplier(1);
+    setMaxSafeReveals(null);
+    setClickOrder([]);
   };
 
   return (
