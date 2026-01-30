@@ -12,8 +12,7 @@ import {
   calculateHandValue,
   isCardRed,
   Card as CardType,
-  getWinProbability,
-  getUserBettingControl,
+  getEffectiveWinProbability,
   decrementForcedOutcome,
   checkMaxProfitLimit
 } from "@/lib/gameUtils";
@@ -192,26 +191,18 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setCanDouble(false);
     setCanSplit(false);
     
-    // Check for forced outcomes first
-    const bettingControl = user?.id ? await getUserBettingControl(user.id) : null;
-    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    let { probability: winProb, forceLoss } = user?.id
+      ? await getEffectiveWinProbability('blackjack', user.id, bet)
+      : { probability: 0.15, forceLoss: false };
     
-    // Check max profit limit
-    if (user?.id && bettingControl?.maxProfitLimit !== null) {
+    // Also check max profit limit
+    if (!forceLoss && user?.id) {
       const maxPayout = bet * 2.5;
       const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile?.balance ?? 0);
-      if (wouldExceedLimit && forcedOutcome !== false) {
-        forcedOutcome = false;
+      if (wouldExceedLimit) {
+        winProb = 0.05;
       }
-    }
-    
-    let winProb = await getWinProbability('blackjack', user?.id);
-    
-    // Override win probability based on forced outcome
-    if (forcedOutcome === true) {
-      winProb = 0.95;
-    } else if (forcedOutcome === false) {
-      winProb = 0.05;
     }
     
     const shouldWin = Math.random() < winProb;

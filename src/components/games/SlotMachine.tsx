@@ -10,8 +10,7 @@ import {
   formatCredits,
   getRandomSlotSymbol,
   SLOT_SYMBOLS,
-  getWinProbability,
-  getUserBettingControl,
+  getEffectiveWinProbability,
   decrementForcedOutcome,
   checkMaxProfitLimit
 } from "@/lib/gameUtils";
@@ -65,26 +64,16 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     const interval = 80;
     let elapsed = 0;
 
-    // Check for forced outcomes first
-    const bettingControl = await getUserBettingControl(user.id);
-    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    const { probability: winProb, forceLoss, forceWin } = await getEffectiveWinProbability('slots', user.id, bet);
     
-    // Check max profit limit
-    if (bettingControl?.maxProfitLimit !== null) {
-      const maxPayout = bet * 25; // Max slot multiplier
+    // Also check max profit limit
+    if (!forceLoss && !forceWin) {
+      const maxPayout = bet * 25;
       const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit && forcedOutcome !== false) {
-        forcedOutcome = false;
+      if (wouldExceedLimit) {
+        // Force loss if would exceed profit limit
       }
-    }
-
-    let winProb = await getWinProbability('slots', user?.id);
-    
-    // Override win probability based on forced outcome
-    if (forcedOutcome === true) {
-      winProb = 0.95;
-    } else if (forcedOutcome === false) {
-      winProb = 0.05;
     }
 
     const spinInterval = setInterval(async () => {

@@ -28,8 +28,11 @@ import {
   Calendar,
   Target,
   Ban,
-  Zap
+  Zap,
+  Shuffle,
+  TrendingDown
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 interface Transaction {
   id: string;
@@ -120,6 +123,8 @@ const AdminPage = () => {
     totalWagered: 0,
     winRate: 0
   });
+  const [roamingEnabled, setRoamingEnabled] = useState(false);
+  const [autoLossOnIncreaseEnabled, setAutoLossOnIncreaseEnabled] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
@@ -144,17 +149,19 @@ const AdminPage = () => {
     if (data) {
       const settings: Record<string, number> = {};
       data.forEach(s => {
-        settings[s.setting_key] = Number(s.setting_value) * 100;
+        settings[s.setting_key] = Number(s.setting_value);
       });
       
-      setGlobalWinProbability(settings['win_probability'] ?? 15);
+      setGlobalWinProbability((settings['win_probability'] ?? 0.15) * 100);
       setGameWinRates({
-        slots: settings['win_probability_slots'] ?? 15,
-        roulette: settings['win_probability_roulette'] ?? 15,
-        blackjack: settings['win_probability_blackjack'] ?? 15,
-        plinko: settings['win_probability_plinko'] ?? 15,
-        mines: settings['win_probability_mines'] ?? 15,
+        slots: (settings['win_probability_slots'] ?? 0.15) * 100,
+        roulette: (settings['win_probability_roulette'] ?? 0.15) * 100,
+        blackjack: (settings['win_probability_blackjack'] ?? 0.15) * 100,
+        plinko: (settings['win_probability_plinko'] ?? 0.15) * 100,
+        mines: (settings['win_probability_mines'] ?? 0.15) * 100,
       });
+      setRoamingEnabled(settings['roaming_probability_enabled'] === 1);
+      setAutoLossOnIncreaseEnabled(settings['auto_loss_on_increase_enabled'] === 1);
     }
   };
 
@@ -291,6 +298,40 @@ const AdminPage = () => {
     } else {
       toast.success(`${GAME_NAMES[game]} win rate updated to ${rate}%`);
       setGameWinRates(prev => ({ ...prev, [game]: rate }));
+    }
+  };
+
+  const toggleRoamingProbability = async (enabled: boolean) => {
+    const { error } = await supabase
+      .from('game_settings')
+      .update({ 
+        setting_value: enabled ? 1 : 0,
+        updated_at: new Date().toISOString()
+      })
+      .eq('setting_key', 'roaming_probability_enabled');
+
+    if (error) {
+      toast.error("Failed to update roaming probability setting");
+    } else {
+      setRoamingEnabled(enabled);
+      toast.success(`Roaming probability ${enabled ? 'enabled' : 'disabled'}`);
+    }
+  };
+
+  const toggleAutoLossOnIncrease = async (enabled: boolean) => {
+    const { error } = await supabase
+      .from('game_settings')
+      .update({ 
+        setting_value: enabled ? 1 : 0,
+        updated_at: new Date().toISOString()
+      })
+      .eq('setting_key', 'auto_loss_on_increase_enabled');
+
+    if (error) {
+      toast.error("Failed to update auto-loss setting");
+    } else {
+      setAutoLossOnIncreaseEnabled(enabled);
+      toast.success(`Auto-loss on bet increase ${enabled ? 'enabled' : 'disabled'}`);
     }
   };
 
@@ -536,6 +577,40 @@ const AdminPage = () => {
                     <Save className="w-4 h-4 mr-2" />
                     Save Global
                   </Button>
+                </div>
+
+                {/* Dynamic Win Rate Controls */}
+                <div className="grid sm:grid-cols-2 gap-4 p-4 bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/30">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <Label className="text-sm font-semibold flex items-center gap-2">
+                        <Shuffle className="w-4 h-4 text-purple-400" />
+                        Roaming Probability
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Win rate randomly changes (0-50%), weighted towards losses (3-4 wins per 10 bets)
+                      </p>
+                    </div>
+                    <Switch
+                      checked={roamingEnabled}
+                      onCheckedChange={toggleRoamingProbability}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <Label className="text-sm font-semibold flex items-center gap-2">
+                        <TrendingDown className="w-4 h-4 text-red-400" />
+                        Auto-Loss on Increase
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Automatically trigger loss when user increases their bet amount
+                      </p>
+                    </div>
+                    <Switch
+                      checked={autoLossOnIncreaseEnabled}
+                      onCheckedChange={toggleAutoLossOnIncrease}
+                    />
+                  </div>
                 </div>
 
                 {/* Per-Game Win Rates */}
