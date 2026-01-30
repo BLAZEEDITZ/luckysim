@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti, getWinProbability, getUserBettingControl, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
 import { Bomb, Diamond, Coins, RotateCcw, Grid3X3 } from "lucide-react";
@@ -98,31 +98,21 @@ export const MinesGame = () => {
       return;
     }
 
-    // Check for forced outcomes first
-    const bettingControl = user?.id ? await getUserBettingControl(user.id) : null;
-    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    const { probability: winProb, forceLoss } = user?.id 
+      ? await getEffectiveWinProbability('mines', user.id, betAmount)
+      : { probability: 0.15, forceLoss: false };
     
-    // Check max profit limit
-    if (user?.id && bettingControl?.maxProfitLimit !== null) {
+    // Also check max profit limit
+    let effectiveWinProb = winProb;
+    if (!forceLoss && user?.id) {
       const safeSpots = totalTiles - effectiveMineCount;
       const maxPayout = betAmount * calculateMultiplier(safeSpots, effectiveMineCount, totalTiles);
       const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit && forcedOutcome !== false) {
-        // Force loss if would exceed profit limit
-        forcedOutcome = false;
+      if (wouldExceedLimit) {
+        effectiveWinProb = 0.05;
         console.log('Forcing loss due to max profit limit');
       }
-    }
-
-    let winProb = await getWinProbability('mines', user?.id);
-    
-    // Override win probability based on forced outcome
-    if (forcedOutcome === true) {
-      winProb = 0.95; // High win chance for forced wins
-      console.log('Forced WIN active - high win probability');
-    } else if (forcedOutcome === false) {
-      winProb = 0.05; // Low win chance for forced losses
-      console.log('Forced LOSS active - low win probability');
     }
     
     const safeSpots = totalTiles - effectiveMineCount;
@@ -134,16 +124,16 @@ export const MinesGame = () => {
     
     // Calculate max safe reveals based on win probability
     // Lower probability = fewer safe reveals allowed
-    const calculatedMaxSafe = Math.floor(safeSpots * winProb);
+    const calculatedMaxSafe = Math.floor(safeSpots * effectiveWinProb);
     
     // Add randomness: sometimes allow 0 safe reveals (first click is mine)
     // This happens more often with lower win probability
-    const firstClickMineChance = 1 - winProb; // e.g., 90% chance for 10% win prob
+    const firstClickMineChance = 1 - effectiveWinProb; // e.g., 90% chance for 10% win prob
     const hitFirstClick = Math.random() < (firstClickMineChance * 0.3); // 30% of loss games hit first
     
     const finalMaxSafe = hitFirstClick ? 0 : Math.max(0, calculatedMaxSafe);
     
-    console.log(`Mines: Win prob ${(winProb * 100).toFixed(1)}%, Safe spots: ${safeSpots}, Max safe reveals: ${finalMaxSafe}, First click mine: ${hitFirstClick}`);
+    console.log(`Mines: Win prob ${(effectiveWinProb * 100).toFixed(1)}%, Safe spots: ${safeSpots}, Max safe reveals: ${finalMaxSafe}, First click mine: ${hitFirstClick}`);
 
     await updateBalance(-betAmount);
     

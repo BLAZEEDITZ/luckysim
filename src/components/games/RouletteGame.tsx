@@ -10,8 +10,7 @@ import {
   formatCredits,
   ROULETTE_NUMBERS,
   getRouletteColor,
-  getWinProbability,
-  getUserBettingControl,
+  getEffectiveWinProbability,
   decrementForcedOutcome,
   checkMaxProfitLimit
 } from "@/lib/gameUtils";
@@ -60,26 +59,16 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
     playSpin();
     await updateBalance(-bet);
 
-    // Check for forced outcomes first
-    const bettingControl = await getUserBettingControl(user.id);
-    let forcedOutcome: boolean | null = bettingControl?.forcedWin ?? null;
+    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    let { probability: winProb, forceLoss } = await getEffectiveWinProbability('roulette', user.id, bet);
     
-    // Check max profit limit
-    if (bettingControl?.maxProfitLimit !== null) {
-      const maxPayout = bet * 35; // Max roulette multiplier
+    // Also check max profit limit
+    if (!forceLoss) {
+      const maxPayout = bet * 35;
       const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit && forcedOutcome !== false) {
-        forcedOutcome = false;
+      if (wouldExceedLimit) {
+        winProb = 0.05;
       }
-    }
-
-    let winProb = await getWinProbability('roulette', user?.id);
-    
-    // Override win probability based on forced outcome
-    if (forcedOutcome === true) {
-      winProb = 0.95;
-    } else if (forcedOutcome === false) {
-      winProb = 0.05;
     }
 
     // Animate wheel spin

@@ -129,6 +129,114 @@ export const getWinProbability = async (game?: string, userId?: string): Promise
   return data?.setting_value ?? 0.15;
 };
 
+// Check if roaming probability is enabled
+export const isRoamingProbabilityEnabled = async (): Promise<boolean> => {
+  const { data } = await supabase
+    .from('game_settings')
+    .select('setting_value')
+    .eq('setting_key', 'roaming_probability_enabled')
+    .single();
+  
+  return data?.setting_value === 1;
+};
+
+// Check if auto-loss on bet increase is enabled
+export const isAutoLossOnIncreaseEnabled = async (): Promise<boolean> => {
+  const { data } = await supabase
+    .from('game_settings')
+    .select('setting_value')
+    .eq('setting_key', 'auto_loss_on_increase_enabled')
+    .single();
+  
+  return data?.setting_value === 1;
+};
+
+// Get roaming probability (0-50% range, weighted towards lower values for more losses)
+// Target: 3-4 wins out of 10 bets (30-40% effective win rate)
+export const getRoamingProbability = (): number => {
+  // Use weighted random to favor lower probabilities
+  // This creates roughly 30-40% win rate on average
+  const random = Math.random();
+  
+  // Weighted distribution: 60% chance of 0-20%, 30% chance of 20-35%, 10% chance of 35-50%
+  if (random < 0.6) {
+    // 60% of the time: 0-20% win rate (more losses)
+    return Math.random() * 0.20;
+  } else if (random < 0.9) {
+    // 30% of the time: 20-35% win rate
+    return 0.20 + Math.random() * 0.15;
+  } else {
+    // 10% of the time: 35-50% win rate (occasional lucky streak)
+    return 0.35 + Math.random() * 0.15;
+  }
+};
+
+// Store last bet amounts per user (in-memory for current session)
+const lastBetAmounts: Map<string, number> = new Map();
+
+// Check if user increased their bet and should auto-lose
+export const checkAutoLossOnIncrease = async (userId: string, currentBet: number): Promise<boolean> => {
+  const autoLossEnabled = await isAutoLossOnIncreaseEnabled();
+  
+  if (!autoLossEnabled) {
+    // Still track the bet for future reference
+    lastBetAmounts.set(userId, currentBet);
+    return false;
+  }
+  
+  const lastBet = lastBetAmounts.get(userId);
+  lastBetAmounts.set(userId, currentBet);
+  
+  // If this is the first bet or bet is same/lower, no auto-loss
+  if (lastBet === undefined || currentBet <= lastBet) {
+    return false;
+  }
+  
+  // User increased their bet - trigger auto-loss
+  return true;
+};
+
+// Reset last bet for a user (call when they leave or on new session)
+export const resetLastBet = (userId: string) => {
+  lastBetAmounts.delete(userId);
+};
+
+// Get effective win probability considering all factors
+export const getEffectiveWinProbability = async (
+  game: string, 
+  userId: string,
+  betAmount: number
+): Promise<{ probability: number; forceLoss: boolean; forceWin: boolean }> => {
+  // First check user betting controls (forced outcomes)
+  const bettingControl = await getUserBettingControl(userId);
+  
+  if (bettingControl.forcedWin === true) {
+    return { probability: 1, forceLoss: false, forceWin: true };
+  }
+  
+  if (bettingControl.forcedWin === false) {
+    return { probability: 0, forceLoss: true, forceWin: false };
+  }
+  
+  // Check auto-loss on bet increase
+  const shouldAutoLose = await checkAutoLossOnIncrease(userId, betAmount);
+  if (shouldAutoLose) {
+    return { probability: 0, forceLoss: true, forceWin: false };
+  }
+  
+  // Check if roaming probability is enabled
+  const roamingEnabled = await isRoamingProbabilityEnabled();
+  
+  if (roamingEnabled) {
+    const roamingProb = getRoamingProbability();
+    return { probability: roamingProb, forceLoss: false, forceWin: false };
+  }
+  
+  // Use standard probability hierarchy
+  const standardProb = await getWinProbability(game, userId);
+  return { probability: standardProb, forceLoss: false, forceWin: false };
+};
+
 // Seeded random with configurable win probability
 export const checkWin = (winProbability: number = 0.15): boolean => {
   return Math.random() < winProbability;
