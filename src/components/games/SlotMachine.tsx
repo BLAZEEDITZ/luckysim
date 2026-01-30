@@ -238,48 +238,47 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
         <p className="text-muted-foreground text-sm sm:text-base">Match symbols to win big!</p>
       </CardHeader>
       
-      <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
+      <CardContent className="space-y-4 sm:space-y-6 p-3 sm:p-6">
         {/* 5-Reel Slot Machine */}
         <motion.div 
-          className={`p-4 sm:p-6 bg-gradient-to-b from-muted to-muted/50 rounded-2xl border-4 border-primary/30 shadow-xl ${shake ? 'animate-shake' : ''}`}
+          className={`relative p-2 sm:p-4 md:p-6 bg-gradient-to-b from-muted to-muted/50 rounded-xl sm:rounded-2xl border-2 sm:border-4 border-primary/30 shadow-xl ${shake ? 'animate-shake' : ''}`}
           animate={spinning ? { scale: [1, 1.01, 1] } : {}}
           transition={{ repeat: spinning ? Infinity : 0, duration: 0.2 }}
         >
           {/* Payline indicator */}
-          <div className="absolute left-0 right-0 top-1/2 pointer-events-none z-10">
-            {paylines.includes(1) && (
+          {paylines.includes(1) && (
+            <div className="absolute left-2 right-2 top-1/2 -translate-y-1/2 pointer-events-none z-10">
               <motion.div 
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
-                className="h-1 bg-secondary/50 mx-4 rounded-full"
+                className="h-0.5 sm:h-1 bg-secondary/50 rounded-full"
               />
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="flex justify-center gap-1 sm:gap-2 relative">
+          <div className="flex justify-center items-center gap-[2px] sm:gap-1 md:gap-2">
             {reels.map((reel, reelIndex) => (
-              <div key={reelIndex} className="relative">
-                <motion.div
-                  className="flex flex-col gap-1 overflow-hidden rounded-xl border-2 border-primary/20 bg-gradient-to-b from-background to-card p-1 sm:p-2"
-                  animate={spinning ? { y: [0, -5, 0] } : {}}
-                  transition={{ 
-                    repeat: spinning ? Infinity : 0, 
-                    duration: 0.1,
-                    delay: reelIndex * 0.05 
-                  }}
-                >
-                  {reel.map((symbol, symbolIndex) => (
-                    <motion.div
-                      key={symbolIndex}
-                      className={`w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 flex items-center justify-center text-2xl sm:text-3xl md:text-4xl rounded-lg ${
-                        symbolIndex === 1 && paylines.includes(1) ? 'bg-secondary/20 ring-2 ring-secondary' : 'bg-muted/50'
-                      }`}
-                    >
-                      {symbol}
-                    </motion.div>
-                  ))}
-                </motion.div>
-              </div>
+              <motion.div
+                key={reelIndex}
+                className="flex flex-col gap-[2px] sm:gap-1 overflow-hidden rounded-lg sm:rounded-xl border border-primary/20 sm:border-2 bg-gradient-to-b from-background to-card p-[2px] sm:p-1 md:p-2"
+                animate={spinning ? { y: [0, -3, 0] } : {}}
+                transition={{ 
+                  repeat: spinning ? Infinity : 0, 
+                  duration: 0.1,
+                  delay: reelIndex * 0.05 
+                }}
+              >
+                {reel.map((symbol, symbolIndex) => (
+                  <div
+                    key={symbolIndex}
+                    className={`w-[52px] h-[52px] sm:w-14 sm:h-14 md:w-16 md:h-16 flex items-center justify-center text-[1.75rem] sm:text-3xl md:text-4xl rounded-md sm:rounded-lg ${
+                      symbolIndex === 1 && paylines.includes(1) ? 'bg-secondary/20 ring-1 sm:ring-2 ring-secondary' : 'bg-muted/50'
+                    }`}
+                  >
+                    <span className="leading-none">{symbol}</span>
+                  </div>
+                ))}
+              </motion.div>
             ))}
           </div>
         </motion.div>
