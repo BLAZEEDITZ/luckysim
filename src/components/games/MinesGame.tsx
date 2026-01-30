@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
-import { Bomb, Diamond, Coins, RotateCcw, Grid3X3 } from "lucide-react";
+import { Bomb, Diamond, Coins, RotateCcw, Grid3X3, Clock } from "lucide-react";
+
+const GAME_TIME_LIMIT_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 type GridSize = 'small' | 'medium' | 'large';
 const GRID_CONFIG: Record<GridSize, { size: number; cols: number; maxMines: number }> = {
@@ -38,6 +40,8 @@ export const MinesGame = () => {
   const [gameOver, setGameOver] = useState(false);
   const [maxSafeReveals, setMaxSafeReveals] = useState<number | null>(null);
   const [clickOrder, setClickOrder] = useState<number[]>([]);
+  const [gameStartTime, setGameStartTime] = useState<number | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
 
   const gridConfig = GRID_CONFIG[gridSize];
   const totalTiles = gridConfig.size;
@@ -158,6 +162,7 @@ export const MinesGame = () => {
     setGameOver(false);
     setRevealedCount(0);
     setCurrentMultiplier(1);
+    setGameStartTime(Date.now()); // Track game start time
   };
 
   const revealTile = async (index: number) => {
@@ -332,7 +337,46 @@ export const MinesGame = () => {
     setCurrentMultiplier(1);
     setMaxSafeReveals(null);
     setClickOrder([]);
+    setGameStartTime(null);
+    setTimeRemaining(null);
   };
+
+  // 24-hour time limit effect
+  useEffect(() => {
+    if (!gameActive || !gameStartTime) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const checkTimeLimit = () => {
+      const elapsed = Date.now() - gameStartTime;
+      const remaining = GAME_TIME_LIMIT_MS - elapsed;
+      
+      if (remaining <= 0) {
+        // Time expired - auto cashout if player has revealed tiles, otherwise just end
+        toast.warning("⏰ Game time limit reached! Auto cashing out...");
+        if (revealedCount > 0) {
+          cashOut();
+        } else {
+          // No tiles revealed - game ends with loss (bet already deducted)
+          setGameActive(false);
+          setGameOver(true);
+          toast.error("Game expired without any reveals. Bet lost.");
+        }
+        return;
+      }
+      
+      // Format remaining time
+      const hours = Math.floor(remaining / (1000 * 60 * 60));
+      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+      setTimeRemaining(`${hours}h ${minutes}m`);
+    };
+
+    checkTimeLimit();
+    const interval = setInterval(checkTimeLimit, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [gameActive, gameStartTime, revealedCount]);
 
   return (
     <div className="grid lg:grid-cols-3 gap-3 sm:gap-6">
@@ -514,6 +558,14 @@ export const MinesGame = () => {
             </div>
           </div>
 
+          {/* Time remaining indicator */}
+          {gameActive && timeRemaining && (
+            <div className="flex items-center justify-center gap-2 p-2 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+              <Clock className="w-4 h-4" />
+              <span>Time left: {timeRemaining}</span>
+            </div>
+          )}
+
           {!gameActive && !gameOver ? (
             <Button 
               variant="gold" 
@@ -524,7 +576,20 @@ export const MinesGame = () => {
             >
               Start Game
             </Button>
+          ) : gameActive ? (
+            // During active game - show Cashout button (prevents accidental new game)
+            <Button 
+              variant="emerald" 
+              size="lg" 
+              className="w-full text-sm sm:text-base" 
+              onClick={cashOut}
+              disabled={revealedCount === 0}
+            >
+              <Coins className="w-4 h-4 mr-2" />
+              Cash Out NPR {(betAmount * currentMultiplier).toFixed(2)}
+            </Button>
           ) : (
+            // Game over - show New Game button
             <Button 
               variant="outline" 
               size="lg" 
