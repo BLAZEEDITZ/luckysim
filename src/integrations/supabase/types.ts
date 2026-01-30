@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      active_game_sessions: {
+        Row: {
+          bet_amount: number
+          created_at: string
+          expires_at: string
+          game: string
+          game_state: Json
+          id: string
+          started_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bet_amount: number
+          created_at?: string
+          expires_at?: string
+          game: string
+          game_state?: Json
+          id?: string
+          started_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bet_amount?: number
+          created_at?: string
+          expires_at?: string
+          game?: string
+          game_state?: Json
+          id?: string
+          started_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       bet_logs: {
         Row: {
           bet_amount: number

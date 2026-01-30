@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Header } from "@/components/layout/Header";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatCredits } from "@/lib/gameUtils";
 import { toast } from "sonner";
 import { format, isToday, isYesterday, parseISO } from "date-fns";
+import { 
+  useBetLogsSubscription, 
+  useProfilesSubscription, 
+  useTransactionsSubscription,
+  useGameSettingsSubscription 
+} from "@/hooks/useRealtimeSubscription";
 import { 
   Users, 
   TrendingUp, 
@@ -30,7 +37,8 @@ import {
   Ban,
   Zap,
   Shuffle,
-  TrendingDown
+  TrendingDown,
+  Activity
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
@@ -62,6 +70,7 @@ interface BetLog {
   payout: number;
   created_at: string;
   user_email?: string;
+  isNew?: boolean;
 }
 
 interface GroupedBets {
@@ -125,6 +134,7 @@ const AdminPage = () => {
   });
   const [roamingEnabled, setRoamingEnabled] = useState(false);
   const [autoLossOnIncreaseEnabled, setAutoLossOnIncreaseEnabled] = useState(false);
+  const betsScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
@@ -140,6 +150,107 @@ const AdminPage = () => {
       fetchUserBettingControls();
     }
   }, [isAdmin]);
+
+  // Real-time subscriptions
+  const handleNewBet = useCallback((bet: Record<string, unknown>) => {
+    const player = profiles.find(p => p.id === bet.user_id);
+    const newBet: BetLog = {
+      id: bet.id as string,
+      user_id: bet.user_id as string,
+      game: bet.game as string,
+      bet_amount: bet.bet_amount as number,
+      won: bet.won as boolean,
+      payout: bet.payout as number,
+      created_at: bet.created_at as string,
+      user_email: player?.email || 'Unknown',
+      isNew: true
+    };
+    
+    setBetLogs(prev => [newBet, ...prev]);
+    
+    // Update stats
+    setStats(prev => ({
+      ...prev,
+      totalBets: prev.totalBets + 1,
+      totalWagered: prev.totalWagered + newBet.bet_amount,
+      winRate: ((prev.winRate * prev.totalBets / 100) + (newBet.won ? 1 : 0)) / (prev.totalBets + 1) * 100
+    }));
+
+    // Remove the "isNew" flag after animation
+    setTimeout(() => {
+      setBetLogs(prev => prev.map(b => b.id === newBet.id ? { ...b, isNew: false } : b));
+    }, 3000);
+  }, [profiles]);
+
+  const handleProfileChange = useCallback((profile: Record<string, unknown>) => {
+    setProfiles(prev => {
+      const existing = prev.findIndex(p => p.id === profile.id);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = { 
+          ...updated[existing], 
+          ...profile,
+          id: profile.id as string,
+          email: (profile.email as string) || updated[existing].email,
+          balance: (profile.balance as number) ?? updated[existing].balance,
+          created_at: (profile.created_at as string) || updated[existing].created_at
+        };
+        return updated.sort((a, b) => b.balance - a.balance);
+      }
+      // Only add if we have required fields
+      if (profile.id && profile.email) {
+        const newProfile: Profile = {
+          id: profile.id as string,
+          email: profile.email as string,
+          balance: (profile.balance as number) ?? 0,
+          created_at: (profile.created_at as string) || new Date().toISOString(),
+          display_name: profile.display_name as string | null | undefined,
+          avatar_url: profile.avatar_url as string | null | undefined
+        };
+        return [...prev, newProfile].sort((a, b) => b.balance - a.balance);
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleTransactionChange = useCallback((tx: Record<string, unknown>, eventType: string) => {
+    if (eventType === 'INSERT') {
+      const player = profiles.find(p => p.id === tx.user_id);
+      const newTx: Transaction = {
+        id: tx.id as string,
+        user_id: tx.user_id as string,
+        type: tx.type as string,
+        amount: tx.amount as number,
+        status: tx.status as string,
+        created_at: tx.created_at as string,
+        user_email: player?.email || 'Unknown'
+      };
+      setTransactions(prev => [newTx, ...prev]);
+    } else if (eventType === 'UPDATE') {
+      setTransactions(prev => 
+        prev.map(t => t.id === tx.id ? { ...t, ...tx } as Transaction : t)
+      );
+    }
+  }, [profiles]);
+
+  const handleSettingChange = useCallback((key: string, value: number) => {
+    if (key === 'win_probability') {
+      setGlobalWinProbability(value * 100);
+    } else if (key === 'roaming_probability_enabled') {
+      setRoamingEnabled(value === 1);
+    } else if (key === 'auto_loss_on_increase_enabled') {
+      setAutoLossOnIncreaseEnabled(value === 1);
+    } else if (key.startsWith('win_probability_')) {
+      const game = key.replace('win_probability_', '');
+      setGameWinRates(prev => ({ ...prev, [game]: value * 100 }));
+    }
+    toast.info(`Setting "${key}" updated in real-time`);
+  }, []);
+
+  useBetLogsSubscription(handleNewBet, isAdmin);
+  useProfilesSubscription(handleProfileChange, isAdmin);
+  useTransactionsSubscription(handleTransactionChange, isAdmin);
+  useGameSettingsSubscription(handleSettingChange, isAdmin);
 
   const fetchGameSettings = async () => {
     const { data } = await supabase
@@ -243,7 +354,6 @@ const AdminPage = () => {
     const newValue = globalWinProbability / 100;
     const timestamp = new Date().toISOString();
     
-    // Update global rate
     const { error: globalError } = await supabase
       .from('game_settings')
       .update({ 
@@ -257,7 +367,6 @@ const AdminPage = () => {
       return;
     }
 
-    // Update all per-game rates to match
     const gameKeys = Object.keys(GAME_NAMES);
     const updatePromises = gameKeys.map(game => 
       supabase
@@ -271,7 +380,6 @@ const AdminPage = () => {
 
     await Promise.all(updatePromises);
 
-    // Update local state
     const newGameRates: GameWinRates = {
       slots: globalWinProbability,
       roulette: globalWinProbability,
@@ -401,7 +509,8 @@ const AdminPage = () => {
       if (betData) {
         const enrichedBets = betData.map(bet => ({
           ...bet,
-          user_email: profileData.find(p => p.id === bet.user_id)?.email || 'Unknown'
+          user_email: profileData.find(p => p.id === bet.user_id)?.email || 'Unknown',
+          isNew: false
         }));
         setBetLogs(enrichedBets as BetLog[]);
 
@@ -538,10 +647,18 @@ const AdminPage = () => {
             <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-primary/30 to-primary/10 rounded-2xl flex items-center justify-center border border-primary/30">
               <Shield className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-2xl sm:text-3xl font-display font-bold text-gradient-gold">Admin Panel</h1>
               <p className="text-muted-foreground text-sm sm:text-base">Manage transactions and control game settings</p>
             </div>
+            <motion.div 
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+              className="flex items-center gap-2 px-3 py-1.5 bg-secondary/20 rounded-full text-xs text-secondary"
+            >
+              <Activity className="w-3 h-3" />
+              <span>Live</span>
+            </motion.div>
           </motion.div>
 
           {/* Game Settings Control */}
@@ -621,7 +738,12 @@ const AdminPage = () => {
                   </Label>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {Object.entries(GAME_NAMES).map(([key, name]) => (
-                      <div key={key} className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
+                      <motion.div 
+                        key={key} 
+                        className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg"
+                        whileHover={{ scale: 1.02 }}
+                        transition={{ type: "spring", stiffness: 300 }}
+                      >
                         <span className="text-sm flex-1">{name}</span>
                         <Input
                           type="number"
@@ -640,7 +762,7 @@ const AdminPage = () => {
                         >
                           <Save className="w-3 h-3" />
                         </Button>
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
                 </div>
@@ -703,7 +825,12 @@ const AdminPage = () => {
                         {userWinRates.map((rate) => {
                           const player = profiles.find(p => p.id === rate.user_id);
                           return (
-                            <div key={`${rate.user_id}-${rate.game}`} className="flex items-center gap-2 px-2 py-1 bg-secondary/20 rounded text-xs">
+                            <motion.div 
+                              key={`${rate.user_id}-${rate.game}`} 
+                              className="flex items-center gap-2 px-2 py-1 bg-secondary/20 rounded text-xs"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                            >
                               <span>{player?.display_name || player?.email?.split('@')[0]}</span>
                               <span className="text-muted-foreground">•</span>
                               <span>{GAME_NAMES[rate.game]}</span>
@@ -717,7 +844,7 @@ const AdminPage = () => {
                               >
                                 <XCircle className="w-3 h-3 text-destructive" />
                               </Button>
-                            </div>
+                            </motion.div>
                           );
                         })}
                       </div>
@@ -801,7 +928,12 @@ const AdminPage = () => {
                         {userBettingControls.map((control) => {
                           const player = profiles.find(p => p.id === control.user_id);
                           return (
-                            <div key={control.user_id} className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg text-xs border border-primary/30">
+                            <motion.div 
+                              key={control.user_id} 
+                              className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-lg text-xs border border-primary/30"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                            >
                               <span className="font-medium">{player?.display_name || player?.email?.split('@')[0]}</span>
                               {control.max_profit_limit !== null && (
                                 <>
@@ -829,7 +961,7 @@ const AdminPage = () => {
                               >
                                 <XCircle className="w-3 h-3 text-destructive" />
                               </Button>
-                            </div>
+                            </motion.div>
                           );
                         })}
                       </div>
@@ -852,20 +984,38 @@ const AdminPage = () => {
               { label: 'Total Bets', value: stats.totalBets, icon: BarChart3, color: 'text-secondary', bg: 'bg-secondary/10' },
               { label: 'Total Wagered', value: `NPR ${formatCredits(stats.totalWagered)}`, icon: Coins, color: 'text-amber-400', bg: 'bg-amber-400/10' },
               { label: 'Win Rate', value: `${stats.winRate.toFixed(1)}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-            ].map((stat) => (
-              <Card key={stat.label} className="overflow-hidden border-border/50 bg-gradient-to-b from-card to-background">
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <div className={`p-2 sm:p-3 rounded-xl ${stat.bg} ${stat.color}`}>
-                      <stat.icon className="w-4 h-4 sm:w-5 sm:h-5" />
+            ].map((stat, index) => (
+              <motion.div
+                key={stat.label}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1 + index * 0.05 }}
+              >
+                <Card className="overflow-hidden border-border/50 bg-gradient-to-b from-card to-background">
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <motion.div 
+                        className={`p-2 sm:p-3 rounded-xl ${stat.bg} ${stat.color}`}
+                        whileHover={{ scale: 1.1, rotate: 5 }}
+                      >
+                        <stat.icon className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </motion.div>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">{stat.label}</p>
+                        <motion.p 
+                          className="text-lg sm:text-xl font-bold truncate"
+                          key={stat.value}
+                          initial={{ scale: 1.2, color: 'hsl(var(--primary))' }}
+                          animate={{ scale: 1, color: 'inherit' }}
+                          transition={{ duration: 0.3 }}
+                        >
+                          {stat.value}
+                        </motion.p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs sm:text-sm text-muted-foreground truncate">{stat.label}</p>
-                      <p className="text-lg sm:text-xl font-bold truncate">{stat.value}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </motion.div>
             ))}
           </motion.div>
 
@@ -890,59 +1040,64 @@ const AdminPage = () => {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {pendingTransactions.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 bg-muted/30 rounded-xl border border-border/30"
-                      >
-                        <div className="flex items-center gap-3">
-                          {tx.type === 'deposit' ? (
-                            <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center shrink-0">
-                              <ArrowDownToLine className="w-5 h-5 text-secondary" />
+                    <AnimatePresence>
+                      {pendingTransactions.map((tx) => (
+                        <motion.div
+                          key={tx.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 20 }}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 bg-muted/30 rounded-xl border border-border/30"
+                        >
+                          <div className="flex items-center gap-3">
+                            {tx.type === 'deposit' ? (
+                              <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center shrink-0">
+                                <ArrowDownToLine className="w-5 h-5 text-secondary" />
+                              </div>
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                                <ArrowUpFromLine className="w-5 h-5 text-primary" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-medium capitalize">{tx.type}</p>
+                              <p className="text-sm text-muted-foreground truncate">
+                                {tx.user_email}
+                              </p>
                             </div>
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                              <ArrowUpFromLine className="w-5 h-5 text-primary" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="font-medium capitalize">{tx.type}</p>
-                            <p className="text-sm text-muted-foreground truncate">
-                              {tx.user_email}
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
+                            <p className={`font-bold text-lg ${
+                              tx.type === 'deposit' ? 'text-secondary' : 'text-primary'
+                            }`}>
+                              NPR {tx.amount}
                             </p>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="emerald"
+                                size="sm"
+                                onClick={() => handleApproveTransaction(tx)}
+                                disabled={processingTx === tx.id}
+                                className="text-xs sm:text-sm"
+                              >
+                                <CheckCircle className="w-4 h-4 sm:mr-1" />
+                                <span className="hidden sm:inline">{processingTx === tx.id ? '...' : 'Approve'}</span>
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleRejectTransaction(tx)}
+                                disabled={processingTx === tx.id}
+                                className="text-xs sm:text-sm"
+                              >
+                                <XCircle className="w-4 h-4 sm:mr-1" />
+                                <span className="hidden sm:inline">{processingTx === tx.id ? '...' : 'Reject'}</span>
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
-                          <p className={`font-bold text-lg ${
-                            tx.type === 'deposit' ? 'text-secondary' : 'text-primary'
-                          }`}>
-                            NPR {tx.amount}
-                          </p>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="emerald"
-                              size="sm"
-                              onClick={() => handleApproveTransaction(tx)}
-                              disabled={processingTx === tx.id}
-                              className="text-xs sm:text-sm"
-                            >
-                              <CheckCircle className="w-4 h-4 sm:mr-1" />
-                              <span className="hidden sm:inline">{processingTx === tx.id ? '...' : 'Approve'}</span>
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleRejectTransaction(tx)}
-                              disabled={processingTx === tx.id}
-                              className="text-xs sm:text-sm"
-                            >
-                              <XCircle className="w-4 h-4 sm:mr-1" />
-                              <span className="hidden sm:inline">{processingTx === tx.id ? '...' : 'Reject'}</span>
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   </div>
                 )}
               </CardContent>
@@ -967,9 +1122,13 @@ const AdminPage = () => {
                   {topPlayers.length > 0 ? (
                     <div className="space-y-3">
                       {topPlayers.map((player, index) => (
-                        <div 
+                        <motion.div 
                           key={player.id}
                           className="flex items-center justify-between p-3 bg-muted/30 rounded-xl"
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          whileHover={{ scale: 1.02, backgroundColor: 'hsl(var(--muted) / 0.5)' }}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <span className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-sm font-bold text-primary border border-primary/30 shrink-0">
@@ -990,10 +1149,15 @@ const AdminPage = () => {
                               {player.display_name || player.email?.split('@')[0] || 'Anonymous'}
                             </span>
                           </div>
-                          <span className="font-semibold text-primary shrink-0 ml-2">
+                          <motion.span 
+                            className="font-semibold text-primary shrink-0 ml-2"
+                            key={player.balance}
+                            initial={{ scale: 1.2 }}
+                            animate={{ scale: 1 }}
+                          >
                             NPR {formatCredits(player.balance)}
-                          </span>
-                        </div>
+                          </motion.span>
+                        </motion.div>
                       ))}
                     </div>
                   ) : (
@@ -1016,70 +1180,97 @@ const AdminPage = () => {
                   <CardTitle className="flex items-center gap-2 text-accent text-lg sm:text-xl">
                     <BarChart3 className="w-5 h-5" />
                     All Bets ({betLogs.length})
+                    <motion.span
+                      animate={{ opacity: [1, 0.5, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                      className="ml-2 text-xs text-secondary"
+                    >
+                      ● Live
+                    </motion.span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
                   {betLogs.length > 0 ? (
-                    <div className="space-y-4 max-h-[500px] overflow-y-auto">
-                      {Object.entries(groupedBets).map(([dateKey, bets]) => (
-                        <div key={dateKey}>
-                          <div className="sticky top-0 bg-card/95 backdrop-blur-sm py-2 mb-2 border-b border-border/50">
-                            <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
-                              <Calendar className="w-4 h-4" />
-                              {dateKey}
-                              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
-                                {bets.length} {bets.length === 1 ? 'bet' : 'bets'}
-                              </span>
-                            </h3>
-                          </div>
-                          <div className="space-y-2">
-                            {bets.map((log) => {
-                              const player = profiles.find((p) => p.id === log.user_id);
-                              return (
-                                <div 
-                                  key={log.id}
-                                  className="flex items-center justify-between p-3 bg-muted/30 rounded-lg text-sm"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
-                                      log.won 
-                                        ? 'bg-secondary/20 text-secondary' 
-                                        : 'bg-destructive/20 text-destructive'
-                                    }`}>
-                                      {log.won ? 'WIN' : 'LOSS'}
-                                    </span>
-                                    {player?.avatar_url ? (
-                                      <img 
-                                        src={player.avatar_url} 
-                                        alt="" 
-                                        className="w-6 h-6 rounded-full object-cover border border-border shrink-0"
-                                      />
-                                    ) : (
-                                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
-                                        {(player?.display_name || player?.email || "U").slice(0, 1).toUpperCase()}
+                    <ScrollArea className="h-[500px]" ref={betsScrollRef}>
+                      <div className="space-y-4 pr-4">
+                        {Object.entries(groupedBets).map(([dateKey, bets]) => (
+                          <div key={dateKey}>
+                            <div className="sticky top-0 bg-card/95 backdrop-blur-sm py-2 mb-2 border-b border-border/50 z-10">
+                              <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                                <Calendar className="w-4 h-4" />
+                                {dateKey}
+                                <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                                  {bets.length} {bets.length === 1 ? 'bet' : 'bets'}
+                                </span>
+                              </h3>
+                            </div>
+                            <div className="space-y-2">
+                              <AnimatePresence>
+                                {bets.map((log) => {
+                                  const player = profiles.find((p) => p.id === log.user_id);
+                                  return (
+                                    <motion.div 
+                                      key={log.id}
+                                      initial={log.isNew ? { opacity: 0, x: -50, scale: 0.9 } : false}
+                                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                                      className={`flex items-center justify-between p-3 rounded-lg text-sm transition-all ${
+                                        log.isNew 
+                                          ? 'bg-primary/20 border border-primary/50 shadow-lg shadow-primary/20' 
+                                          : 'bg-muted/30'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <motion.span 
+                                          className={`px-2 py-1 rounded text-xs font-medium shrink-0 ${
+                                            log.won 
+                                              ? 'bg-secondary/20 text-secondary' 
+                                              : 'bg-destructive/20 text-destructive'
+                                          }`}
+                                          animate={log.isNew ? { scale: [1, 1.1, 1] } : {}}
+                                          transition={{ repeat: log.isNew ? 2 : 0, duration: 0.3 }}
+                                        >
+                                          {log.won ? 'WIN' : 'LOSS'}
+                                        </motion.span>
+                                        {player?.avatar_url ? (
+                                          <img 
+                                            src={player.avatar_url} 
+                                            alt="" 
+                                            className="w-6 h-6 rounded-full object-cover border border-border shrink-0"
+                                          />
+                                        ) : (
+                                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
+                                            {(player?.display_name || player?.email || "U").slice(0, 1).toUpperCase()}
+                                          </div>
+                                        )}
+                                        <span className="text-muted-foreground truncate">
+                                          {player?.display_name || player?.email?.split("@")[0] || "Unknown"}
+                                        </span>
+                                        <span className="capitalize text-muted-foreground truncate">• {log.game}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {format(parseISO(log.created_at), "h:mm a")}
+                                        </span>
                                       </div>
-                                    )}
-                                    <span className="text-muted-foreground truncate">
-                                      {player?.display_name || player?.email?.split("@")[0] || "Unknown"}
-                                    </span>
-                                    <span className="capitalize text-muted-foreground truncate">• {log.game}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {format(parseISO(log.created_at), "h:mm a")}
-                                    </span>
-                                  </div>
-                                  <div className="text-right shrink-0 ml-2">
-                                    <span className="font-medium">NPR {log.bet_amount}</span>
-                                    {log.won && (
-                                      <span className="text-secondary ml-2">+NPR {log.payout}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                      <div className="text-right shrink-0 ml-2">
+                                        <span className="font-medium">NPR {log.bet_amount}</span>
+                                        {log.won && (
+                                          <motion.span 
+                                            className="text-secondary ml-2"
+                                            initial={log.isNew ? { scale: 0 } : false}
+                                            animate={{ scale: 1 }}
+                                          >
+                                            +NPR {log.payout}
+                                          </motion.span>
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  );
+                                })}
+                              </AnimatePresence>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
                   ) : (
                     <p className="text-center text-muted-foreground py-6 sm:py-8">
                       No bets yet
@@ -1105,60 +1296,70 @@ const AdminPage = () => {
               </CardHeader>
               <CardContent className="pt-4 sm:pt-6 p-3 sm:p-6">
                 {profiles.length > 0 ? (
-                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                    {profiles.map((player) => (
-                      <div 
-                        key={player.id}
-                        className="flex items-center justify-between p-3 bg-muted/30 rounded-xl"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          {player.avatar_url ? (
-                            <img 
-                              src={player.avatar_url} 
-                              alt="" 
-                              className="w-8 h-8 rounded-full object-cover border border-border shrink-0"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
-                              {(player.display_name || player.email || "U").slice(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">
-                              {player.display_name || player.email?.split('@')[0] || 'Anonymous'}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {player.email}
-                            </p>
-                          </div>
-                        </div>
-                        {editingBalance === player.id ? (
-                          <div className="flex items-center gap-1 shrink-0 ml-2">
-                            <Input
-                              type="number"
-                              value={newBalance}
-                              onChange={(e) => setNewBalance(Number(e.target.value))}
-                              className="w-24 h-8 text-sm"
-                              autoFocus
-                            />
-                            <Button size="sm" variant="emerald" onClick={() => handleUpdateUserBalance(player.id, newBalance)}>
-                              <Save className="w-3 h-3" />
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingBalance(null)}>
-                              <XCircle className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <span 
-                            className="font-semibold text-primary shrink-0 ml-2 cursor-pointer hover:underline"
-                            onClick={() => { setEditingBalance(player.id); setNewBalance(player.balance); }}
+                  <ScrollArea className="h-[400px]">
+                    <div className="space-y-2 pr-4">
+                      <AnimatePresence>
+                        {profiles.map((player) => (
+                          <motion.div 
+                            key={player.id}
+                            className="flex items-center justify-between p-3 bg-muted/30 rounded-xl"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            whileHover={{ scale: 1.01, backgroundColor: 'hsl(var(--muted) / 0.5)' }}
                           >
-                            NPR {formatCredits(player.balance)}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {player.avatar_url ? (
+                                <img 
+                                  src={player.avatar_url} 
+                                  alt="" 
+                                  className="w-8 h-8 rounded-full object-cover border border-border shrink-0"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/30 shrink-0">
+                                  {(player.display_name || player.email || "U").slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium truncate">
+                                  {player.display_name || player.email?.split('@')[0] || 'Anonymous'}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {player.email}
+                                </p>
+                              </div>
+                            </div>
+                            {editingBalance === player.id ? (
+                              <div className="flex items-center gap-1 shrink-0 ml-2">
+                                <Input
+                                  type="number"
+                                  value={newBalance}
+                                  onChange={(e) => setNewBalance(Number(e.target.value))}
+                                  className="w-24 h-8 text-sm"
+                                  autoFocus
+                                />
+                                <Button size="sm" variant="emerald" onClick={() => handleUpdateUserBalance(player.id, newBalance)}>
+                                  <Save className="w-3 h-3" />
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingBalance(null)}>
+                                  <XCircle className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <motion.span 
+                                className="font-semibold text-primary shrink-0 ml-2 cursor-pointer hover:underline"
+                                onClick={() => { setEditingBalance(player.id); setNewBalance(player.balance); }}
+                                key={player.balance}
+                                initial={{ scale: 1.1 }}
+                                animate={{ scale: 1 }}
+                              >
+                                NPR {formatCredits(player.balance)}
+                              </motion.span>
+                            )}
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </ScrollArea>
                 ) : (
                   <p className="text-center text-muted-foreground py-6 sm:py-8">
                     No users yet

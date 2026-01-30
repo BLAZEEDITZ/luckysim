@@ -6,13 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
+import { useGameSession } from "@/hooks/useGameSession";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
-import { Bomb, Diamond, Coins, RotateCcw, Grid3X3, Clock } from "lucide-react";
-
-const GAME_TIME_LIMIT_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+import { Bomb, Diamond, Coins, RotateCcw, Grid3X3, Clock, Loader2 } from "lucide-react";
 
 type GridSize = 'small' | 'medium' | 'large';
 const GRID_CONFIG: Record<GridSize, { size: number; cols: number; maxMines: number }> = {
@@ -29,7 +28,9 @@ interface Tile {
 
 export const MinesGame = () => {
   const { profile, user, updateBalance, refreshProfile } = useAuth();
-  const { playReveal, playExplosion, playWin, playBigWin, playCashout, playChip } = useSoundEffects();
+  const { activeSession, loading: sessionLoading, saveSession, updateSession, clearSession, getTimeRemaining } = useGameSession('mines');
+  const { playReveal, playExplosion, playWin, playBigWin, playCashout } = useSoundEffects();
+  
   const [betAmount, setBetAmount] = useState(10);
   const [mineCount, setMineCount] = useState(3);
   const [gridSize, setGridSize] = useState<GridSize>('large');
@@ -40,8 +41,8 @@ export const MinesGame = () => {
   const [gameOver, setGameOver] = useState(false);
   const [maxSafeReveals, setMaxSafeReveals] = useState<number | null>(null);
   const [clickOrder, setClickOrder] = useState<number[]>([]);
-  const [gameStartTime, setGameStartTime] = useState<number | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
+  const [sessionRestored, setSessionRestored] = useState(false);
 
   const gridConfig = GRID_CONFIG[gridSize];
   const totalTiles = gridConfig.size;
@@ -50,6 +51,60 @@ export const MinesGame = () => {
 
   // Adjust mine count when grid size changes
   const effectiveMineCount = Math.min(mineCount, maxMines);
+
+  // Restore session on mount
+  useEffect(() => {
+    if (sessionLoading || sessionRestored) return;
+    
+    if (activeSession && activeSession.game_state) {
+      const state = activeSession.game_state;
+      
+      // Restore game state
+      if (state.grid) setGrid(state.grid as Tile[]);
+      if (state.gridSize) setGridSize(state.gridSize as GridSize);
+      if (state.mineCount) setMineCount(state.mineCount as number);
+      if (state.revealedCount !== undefined) setRevealedCount(state.revealedCount as number);
+      if (state.currentMultiplier !== undefined) setCurrentMultiplier(state.currentMultiplier as number);
+      if (state.maxSafeReveals !== undefined) setMaxSafeReveals(state.maxSafeReveals as number | null);
+      if (state.clickOrder) setClickOrder(state.clickOrder as number[]);
+      
+      setBetAmount(activeSession.bet_amount);
+      setGameActive(true);
+      setGameOver(false);
+      setSessionRestored(true);
+      
+      toast.info("🎮 Your previous game has been restored!");
+    } else {
+      setSessionRestored(true);
+    }
+  }, [activeSession, sessionLoading, sessionRestored]);
+
+  // Update time remaining
+  useEffect(() => {
+    if (!gameActive) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const updateTime = () => {
+      const remaining = getTimeRemaining();
+      setTimeRemaining(remaining);
+      
+      // Check if time expired
+      if (remaining === '0h 0m') {
+        toast.warning("⏰ Game time limit reached! Auto cashing out...");
+        if (revealedCount > 0) {
+          cashOut();
+        } else {
+          handleTimeExpired();
+        }
+      }
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 60000);
+    return () => clearInterval(interval);
+  }, [gameActive, getTimeRemaining, revealedCount]);
 
   // Max multiplier caps: 3x3=16x, 4x4=24x, 5x5=48x
   const getMaxMultiplierCap = useCallback((gridTotal: number, mines: number) => {
@@ -91,6 +146,13 @@ export const MinesGame = () => {
     return calculateMultiplier(safeSpots, effectiveMineCount, totalTiles);
   }, [effectiveMineCount, totalTiles, calculateMultiplier]);
 
+  const handleTimeExpired = async () => {
+    setGameActive(false);
+    setGameOver(true);
+    await clearSession();
+    toast.error("Game expired without any reveals. Bet lost.");
+  };
+
   const startGame = async () => {
     if (!profile || betAmount > profile.balance) {
       toast.error("Insufficient balance!");
@@ -102,12 +164,11 @@ export const MinesGame = () => {
       return;
     }
 
-    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    // Get effective win probability
     const { probability: winProb, forceLoss } = user?.id 
       ? await getEffectiveWinProbability('mines', user.id, betAmount)
       : { probability: 0.15, forceLoss: false };
     
-    // Also check max profit limit
     let effectiveWinProb = winProb;
     if (!forceLoss && user?.id) {
       const safeSpots = totalTiles - effectiveMineCount;
@@ -115,37 +176,20 @@ export const MinesGame = () => {
       const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
       if (wouldExceedLimit) {
         effectiveWinProb = 0.05;
-        console.log('Forcing loss due to max profit limit');
       }
     }
     
     const safeSpots = totalTiles - effectiveMineCount;
-    
-    // MATHEMATICAL PROBABILITY SYSTEM:
-    // Win probability determines maximum tiles player can safely reveal
-    // E.g., 10% win prob on 25 tiles with 5 mines (20 safe) = max 2 safe reveals before guaranteed mine
-    // Sometimes (based on probability), player hits mine on first click
-    
-    // Calculate max safe reveals based on win probability
-    // Lower probability = fewer safe reveals allowed
     const calculatedMaxSafe = Math.floor(safeSpots * effectiveWinProb);
-    
-    // Add randomness: sometimes allow 0 safe reveals (first click is mine)
-    // This happens more often with lower win probability
-    const firstClickMineChance = 1 - effectiveWinProb; // e.g., 90% chance for 10% win prob
-    const hitFirstClick = Math.random() < (firstClickMineChance * 0.3); // 30% of loss games hit first
-    
+    const firstClickMineChance = 1 - effectiveWinProb;
+    const hitFirstClick = Math.random() < (firstClickMineChance * 0.3);
     const finalMaxSafe = hitFirstClick ? 0 : Math.max(0, calculatedMaxSafe);
-    
-    console.log(`Mines: Win prob ${(effectiveWinProb * 100).toFixed(1)}%, Safe spots: ${safeSpots}, Max safe reveals: ${finalMaxSafe}, First click mine: ${hitFirstClick}`);
 
     await updateBalance(-betAmount);
     
-    // Store max safe reveals - mines will be placed dynamically
     setMaxSafeReveals(finalMaxSafe);
     setClickOrder([]);
 
-    // Initially place mines randomly - they'll be repositioned dynamically when needed
     const minePositions = new Set<number>();
     while (minePositions.size < effectiveMineCount) {
       minePositions.add(Math.floor(Math.random() * totalTiles));
@@ -162,7 +206,17 @@ export const MinesGame = () => {
     setGameOver(false);
     setRevealedCount(0);
     setCurrentMultiplier(1);
-    setGameStartTime(Date.now()); // Track game start time
+
+    // Save session to database
+    await saveSession(betAmount, {
+      grid: newGrid,
+      gridSize,
+      mineCount: effectiveMineCount,
+      revealedCount: 0,
+      currentMultiplier: 1,
+      maxSafeReveals: finalMaxSafe,
+      clickOrder: []
+    });
   };
 
   const revealTile = async (index: number) => {
@@ -174,44 +228,26 @@ export const MinesGame = () => {
     let newGrid = [...grid];
     let tileIsMine = false;
     
-    // MATHEMATICAL PROBABILITY ENFORCEMENT:
-    // maxSafeReveals determines exactly how many tiles player can safely reveal
-    // If currentReveals < maxSafeReveals: player is GUARANTEED safe (relocate mine if needed)
-    // If currentReveals >= maxSafeReveals: player MUST hit a mine
-    
     if (maxSafeReveals !== null) {
       if (currentReveals >= maxSafeReveals) {
-        // Player exceeded allowed safe reveals - FORCE this tile to be a mine
-        // IMPORTANT: We need to RELOCATE an existing mine here, not add a new one
-        console.log(`Forcing mine at position ${index} - exceeded max safe reveals (${currentReveals} >= ${maxSafeReveals})`);
-        
         if (!newGrid[index].isMine) {
-          // This tile is safe, but we need it to be a mine - swap with an existing mine
           const unrevealedMines = newGrid
             .map((t, i) => ({ ...t, originalIndex: i }))
             .filter(t => !t.revealed && t.isMine && t.originalIndex !== index);
           
           if (unrevealedMines.length > 0) {
-            // Move one of the existing mines to this position
             const mineToMove = unrevealedMines[Math.floor(Math.random() * unrevealedMines.length)];
             newGrid[mineToMove.originalIndex] = { ...newGrid[mineToMove.originalIndex], isMine: false };
             newGrid[index] = { ...newGrid[index], isMine: true, revealed: true };
-            console.log(`Swapped mine from position ${mineToMove.originalIndex} to ${index}`);
           } else {
-            // No unrevealed mines to swap - just reveal as mine (edge case)
             newGrid[index] = { ...newGrid[index], isMine: true, revealed: true };
           }
         } else {
-          // Tile was already a mine, just reveal it
           newGrid[index] = { ...newGrid[index], revealed: true };
         }
         tileIsMine = true;
       } else {
-        // Player is within safe reveal limit - GUARANTEE this tile is safe
-        // If the tile was originally a mine, relocate it
         if (newGrid[index].isMine) {
-          console.log(`Relocating mine from position ${index} - player within safe limit (${currentReveals} < ${maxSafeReveals})`);
-          // Find an unrevealed non-mine tile to move the mine to
           const unrevealedSafeTiles = newGrid
             .map((t, i) => ({ ...t, originalIndex: i }))
             .filter(t => !t.revealed && !t.isMine && t.originalIndex !== index);
@@ -228,13 +264,13 @@ export const MinesGame = () => {
         }
       }
     } else {
-      // No probability control - use original mine placement
       tileIsMine = newGrid[index].isMine;
       newGrid[index] = { ...newGrid[index], revealed: true };
     }
     
     setGrid(newGrid);
-    setClickOrder([...clickOrder, index]);
+    const newClickOrder = [...clickOrder, index];
+    setClickOrder(newClickOrder);
 
     if (tileIsMine) {
       playExplosion();
@@ -255,11 +291,11 @@ export const MinesGame = () => {
         payout: 0
       });
 
-      // Decrement forced loss if applicable
       if (user?.id) {
         await decrementForcedOutcome(user.id, false);
       }
 
+      await clearSession();
       toast.error("💥 BOOM! You hit a mine!");
     } else {
       playReveal();
@@ -268,11 +304,20 @@ export const MinesGame = () => {
       const newMultiplier = calculateMultiplier(newRevealed, effectiveMineCount, totalTiles);
       setCurrentMultiplier(newMultiplier);
       
-      // Auto cash out when all safe tiles revealed
+      // Update session with new state
+      await updateSession({
+        grid: newGrid,
+        gridSize,
+        mineCount: effectiveMineCount,
+        revealedCount: newRevealed,
+        currentMultiplier: newMultiplier,
+        maxSafeReveals,
+        clickOrder: newClickOrder
+      });
+      
       if (newRevealed >= safeSpots) {
         const payout = betAmount * newMultiplier;
         
-        // Log bet FIRST before updating balance
         await supabase.from('bet_logs').insert({
           user_id: profile?.id,
           game: 'mines',
@@ -281,7 +326,6 @@ export const MinesGame = () => {
           payout: payout
         });
         
-        // Decrement forced win if applicable
         if (user?.id) {
           await decrementForcedOutcome(user.id, true);
         }
@@ -294,6 +338,7 @@ export const MinesGame = () => {
         setGrid(newGrid.map(t => ({ ...t, revealed: true })));
         setGameActive(false);
         setGameOver(true);
+        await clearSession();
         await refreshProfile();
       }
     }
@@ -314,7 +359,6 @@ export const MinesGame = () => {
       payout: payout
     });
 
-    // Decrement forced win if applicable
     if (user?.id) {
       await decrementForcedOutcome(user.id, true);
     }
@@ -326,10 +370,11 @@ export const MinesGame = () => {
     setGrid(grid.map(t => ({ ...t, revealed: true })));
     setGameActive(false);
     setGameOver(true);
+    await clearSession();
     await refreshProfile();
   };
 
-  const resetGame = () => {
+  const resetGame = async () => {
     setGrid([]);
     setGameActive(false);
     setGameOver(false);
@@ -337,46 +382,22 @@ export const MinesGame = () => {
     setCurrentMultiplier(1);
     setMaxSafeReveals(null);
     setClickOrder([]);
-    setGameStartTime(null);
     setTimeRemaining(null);
+    await clearSession();
   };
 
-  // 24-hour time limit effect
-  useEffect(() => {
-    if (!gameActive || !gameStartTime) {
-      setTimeRemaining(null);
-      return;
-    }
-
-    const checkTimeLimit = () => {
-      const elapsed = Date.now() - gameStartTime;
-      const remaining = GAME_TIME_LIMIT_MS - elapsed;
-      
-      if (remaining <= 0) {
-        // Time expired - auto cashout if player has revealed tiles, otherwise just end
-        toast.warning("⏰ Game time limit reached! Auto cashing out...");
-        if (revealedCount > 0) {
-          cashOut();
-        } else {
-          // No tiles revealed - game ends with loss (bet already deducted)
-          setGameActive(false);
-          setGameOver(true);
-          toast.error("Game expired without any reveals. Bet lost.");
-        }
-        return;
-      }
-      
-      // Format remaining time
-      const hours = Math.floor(remaining / (1000 * 60 * 60));
-      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-      setTimeRemaining(`${hours}h ${minutes}m`);
-    };
-
-    checkTimeLimit();
-    const interval = setInterval(checkTimeLimit, 60000); // Update every minute
-
-    return () => clearInterval(interval);
-  }, [gameActive, gameStartTime, revealedCount]);
+  if (sessionLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1 }}
+        >
+          <Loader2 className="w-8 h-8 text-primary" />
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid lg:grid-cols-3 gap-3 sm:gap-6">
@@ -560,10 +581,14 @@ export const MinesGame = () => {
 
           {/* Time remaining indicator */}
           {gameActive && timeRemaining && (
-            <div className="flex items-center justify-center gap-2 p-2 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center justify-center gap-2 p-2 bg-muted/50 rounded-lg text-sm text-muted-foreground"
+            >
               <Clock className="w-4 h-4" />
               <span>Time left: {timeRemaining}</span>
-            </div>
+            </motion.div>
           )}
 
           {!gameActive && !gameOver ? (
@@ -577,7 +602,6 @@ export const MinesGame = () => {
               Start Game
             </Button>
           ) : gameActive ? (
-            // During active game - show Cashout button (prevents accidental new game)
             <Button 
               variant="emerald" 
               size="lg" 
@@ -589,7 +613,6 @@ export const MinesGame = () => {
               Cash Out NPR {(betAmount * currentMultiplier).toFixed(2)}
             </Button>
           ) : (
-            // Game over - show New Game button
             <Button 
               variant="outline" 
               size="lg" 
