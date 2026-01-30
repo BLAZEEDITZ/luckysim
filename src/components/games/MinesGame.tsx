@@ -177,9 +177,30 @@ export const MinesGame = () => {
     if (maxSafeReveals !== null) {
       if (currentReveals >= maxSafeReveals) {
         // Player exceeded allowed safe reveals - FORCE this tile to be a mine
+        // IMPORTANT: We need to RELOCATE an existing mine here, not add a new one
         console.log(`Forcing mine at position ${index} - exceeded max safe reveals (${currentReveals} >= ${maxSafeReveals})`);
+        
+        if (!newGrid[index].isMine) {
+          // This tile is safe, but we need it to be a mine - swap with an existing mine
+          const unrevealedMines = newGrid
+            .map((t, i) => ({ ...t, originalIndex: i }))
+            .filter(t => !t.revealed && t.isMine && t.originalIndex !== index);
+          
+          if (unrevealedMines.length > 0) {
+            // Move one of the existing mines to this position
+            const mineToMove = unrevealedMines[Math.floor(Math.random() * unrevealedMines.length)];
+            newGrid[mineToMove.originalIndex] = { ...newGrid[mineToMove.originalIndex], isMine: false };
+            newGrid[index] = { ...newGrid[index], isMine: true, revealed: true };
+            console.log(`Swapped mine from position ${mineToMove.originalIndex} to ${index}`);
+          } else {
+            // No unrevealed mines to swap - just reveal as mine (edge case)
+            newGrid[index] = { ...newGrid[index], isMine: true, revealed: true };
+          }
+        } else {
+          // Tile was already a mine, just reveal it
+          newGrid[index] = { ...newGrid[index], revealed: true };
+        }
         tileIsMine = true;
-        newGrid[index] = { ...newGrid[index], isMine: true, revealed: true };
       } else {
         // Player is within safe reveal limit - GUARANTEE this tile is safe
         // If the tile was originally a mine, relocate it
