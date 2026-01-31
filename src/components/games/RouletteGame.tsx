@@ -11,8 +11,7 @@ import {
   ROULETTE_NUMBERS,
   getRouletteColor,
   getEffectiveWinProbability,
-  decrementForcedOutcome,
-  checkMaxProfitLimit
+  decrementForcedOutcome
 } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { Coins, Minus, Plus } from "lucide-react";
@@ -59,17 +58,15 @@ export const RouletteGame = ({ gameConfig }: RouletteGameProps) => {
     playSpin();
     await updateBalance(-bet);
 
-    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
-    let { probability: winProb, forceLoss } = await getEffectiveWinProbability('roulette', user.id, bet);
-    
-    // Also check max profit limit
-    if (!forceLoss) {
-      const maxPayout = bet * 35;
-      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit) {
-        winProb = 0.05;
-      }
-    }
+    // Get effective win probability (handles all priorities including max profit limit)
+    const maxPayout = bet * 35; // Maximum possible payout for roulette
+    let { probability: winProb, forceLoss } = await getEffectiveWinProbability(
+      'roulette', 
+      user.id, 
+      bet, 
+      profile.balance, 
+      maxPayout
+    );
 
     // Animate wheel spin
     const spinDuration = 4000;

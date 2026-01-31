@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
 import { Circle, Zap, Shield, Flame } from "lucide-react";
@@ -292,19 +292,11 @@ export const PlinkoGame = () => {
     setLastMultiplier(null);
     setLastBucketIndex(null);
 
-    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    // Get effective win probability (handles all priorities including max profit limit)
+    const maxPayout = betAmount * Math.max(...multipliers);
     let { probability: winProb, forceLoss } = user?.id 
-      ? await getEffectiveWinProbability('plinko', user.id, betAmount)
+      ? await getEffectiveWinProbability('plinko', user.id, betAmount, profile.balance, maxPayout)
       : { probability: 0.15, forceLoss: false };
-    
-    // Also check max profit limit
-    if (!forceLoss && user?.id) {
-      const maxPayout = betAmount * Math.max(...multipliers);
-      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit) {
-        winProb = 0.05;
-      }
-    }
     
     const shouldWin = Math.random() < winProb;
     

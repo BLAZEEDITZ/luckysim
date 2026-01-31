@@ -75,7 +75,17 @@ export const decrementForcedOutcome = async (userId: string, isWin: boolean) => 
 };
 
 // Check if user would exceed max profit limit
-export const checkMaxProfitLimit = async (userId: string, potentialPayout: number, currentBalance: number, initialBalance: number = 10): Promise<boolean> => {
+export const checkMaxProfitLimit = async (userId: string, potentialPayout: number, currentBalance: number): Promise<boolean> => {
+  // First get the user's initial balance from profiles created_at
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('created_at')
+    .eq('id', userId)
+    .single();
+  
+  // Default initial balance is 10 (set in handle_new_user trigger)
+  const initialBalance = 10;
+  
   const { data } = await supabase
     .from('user_betting_controls')
     .select('max_profit_limit')
@@ -88,6 +98,18 @@ export const checkMaxProfitLimit = async (userId: string, potentialPayout: numbe
   const potentialProfit = currentProfit + potentialPayout;
 
   return potentialProfit > data.max_profit_limit;
+};
+
+// Check user-specific win rate for a specific game
+export const checkUserSpecificWinRate = async (userId: string, game: string): Promise<number | null> => {
+  const { data } = await supabase
+    .from('user_win_rates')
+    .select('win_probability')
+    .eq('user_id', userId)
+    .eq('game', game)
+    .maybeSingle();
+  
+  return data?.win_probability ?? null;
 };
 
 // Fetch win probability from database for a specific game and user
@@ -151,23 +173,25 @@ export const isAutoLossOnIncreaseEnabled = async (): Promise<boolean> => {
   return data?.setting_value === 1;
 };
 
-// Get roaming probability (0-50% range, weighted towards lower values for more losses)
-// Target: 3-4 wins out of 10 bets (30-40% effective win rate)
+// Get roaming probability (0-65% range, weighted for 4-5 wins per 10 bets)
+// Target: 4-5 wins out of 10 bets (40-50% effective win rate)
 export const getRoamingProbability = (): number => {
-  // Use weighted random to favor lower probabilities
-  // This creates roughly 30-40% win rate on average
+  // Use weighted random to achieve roughly 40-50% win rate on average
   const random = Math.random();
   
-  // Weighted distribution: 60% chance of 0-20%, 30% chance of 20-35%, 10% chance of 35-50%
-  if (random < 0.6) {
-    // 60% of the time: 0-20% win rate (more losses)
-    return Math.random() * 0.20;
-  } else if (random < 0.9) {
-    // 30% of the time: 20-35% win rate
-    return 0.20 + Math.random() * 0.15;
-  } else {
-    // 10% of the time: 35-50% win rate (occasional lucky streak)
+  // Weighted distribution for 4-5 wins per 10:
+  // 25% chance: 0-25% win rate (occasional bad streak)
+  // 45% chance: 35-50% win rate (normal play)
+  // 30% chance: 50-65% win rate (good streak)
+  if (random < 0.25) {
+    // 25% of the time: 0-25% win rate (occasional bad streak)
+    return Math.random() * 0.25;
+  } else if (random < 0.70) {
+    // 45% of the time: 35-50% win rate (normal play)
     return 0.35 + Math.random() * 0.15;
+  } else {
+    // 30% of the time: 50-65% win rate (good streak)
+    return 0.50 + Math.random() * 0.15;
   }
 };
 
@@ -202,12 +226,22 @@ export const resetLastBet = (userId: string) => {
 };
 
 // Get effective win probability considering all factors
+// PRIORITY ORDER (Highest to Lowest):
+// 1. User-Specific Betting Controls (forced wins/losses)
+// 2. Max Profit Limit (if would exceed, force loss)
+// 3. Auto-Loss on Bet Increase
+// 4. User-Specific Win Rates (per user, per game)
+// 5. Roaming Probability (if enabled)
+// 6. Game-Specific Win Probability
+// 7. Global Win Probability (fallback)
 export const getEffectiveWinProbability = async (
   game: string, 
   userId: string,
-  betAmount: number
+  betAmount: number,
+  currentBalance?: number,
+  potentialMaxPayout?: number
 ): Promise<{ probability: number; forceLoss: boolean; forceWin: boolean }> => {
-  // First check user betting controls (forced outcomes)
+  // PRIORITY 1: Check forced wins/losses from betting controls
   const bettingControl = await getUserBettingControl(userId);
   
   if (bettingControl.forcedWin === true) {
@@ -218,21 +252,38 @@ export const getEffectiveWinProbability = async (
     return { probability: 0, forceLoss: true, forceWin: false };
   }
   
-  // Check auto-loss on bet increase
+  // PRIORITY 2: Check max profit limit - if would exceed, force loss
+  if (currentBalance !== undefined && potentialMaxPayout !== undefined && bettingControl.maxProfitLimit !== null) {
+    const initialBalance = 10; // Default initial balance from handle_new_user trigger
+    const currentProfit = currentBalance - initialBalance;
+    const potentialProfit = currentProfit + potentialMaxPayout;
+    
+    if (potentialProfit > bettingControl.maxProfitLimit) {
+      return { probability: 0, forceLoss: true, forceWin: false };
+    }
+  }
+  
+  // PRIORITY 3: Check auto-loss on bet increase
   const shouldAutoLose = await checkAutoLossOnIncrease(userId, betAmount);
   if (shouldAutoLose) {
     return { probability: 0, forceLoss: true, forceWin: false };
   }
   
-  // Check if roaming probability is enabled
-  const roamingEnabled = await isRoamingProbabilityEnabled();
+  // PRIORITY 4: Check user-specific win rate for this game
+  const userSpecificRate = await checkUserSpecificWinRate(userId, game);
+  if (userSpecificRate !== null) {
+    // User has a specific rate set - use it and SKIP roaming probability
+    return { probability: userSpecificRate, forceLoss: false, forceWin: false };
+  }
   
+  // PRIORITY 5: Check if roaming probability is enabled
+  const roamingEnabled = await isRoamingProbabilityEnabled();
   if (roamingEnabled) {
     const roamingProb = getRoamingProbability();
     return { probability: roamingProb, forceLoss: false, forceWin: false };
   }
   
-  // Use standard probability hierarchy
+  // PRIORITY 6 & 7: Use standard probability hierarchy (game-specific → global)
   const standardProb = await getWinProbability(game, userId);
   return { probability: standardProb, forceLoss: false, forceWin: false };
 };

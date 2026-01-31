@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/hooks/useAuth";
 import { useGameSession } from "@/hooks/useGameSession";
 import { supabase } from "@/integrations/supabase/client";
-import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome, checkMaxProfitLimit } from "@/lib/gameUtils";
+import { formatCredits, triggerWinConfetti, getEffectiveWinProbability, decrementForcedOutcome } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
 import { Bomb, Diamond, Coins, RotateCcw, Grid3X3, Clock, Loader2 } from "lucide-react";
@@ -164,22 +164,18 @@ export const MinesGame = () => {
       return;
     }
 
-    // Get effective win probability
+    // Get effective win probability (handles all priorities including max profit limit)
+    const safeSpots = totalTiles - effectiveMineCount;
+    const maxPayout = betAmount * calculateMultiplier(safeSpots, effectiveMineCount, totalTiles);
+    
     const { probability: winProb, forceLoss } = user?.id 
-      ? await getEffectiveWinProbability('mines', user.id, betAmount)
+      ? await getEffectiveWinProbability('mines', user.id, betAmount, profile.balance, maxPayout)
       : { probability: 0.15, forceLoss: false };
     
     let effectiveWinProb = winProb;
-    if (!forceLoss && user?.id) {
-      const safeSpots = totalTiles - effectiveMineCount;
-      const maxPayout = betAmount * calculateMultiplier(safeSpots, effectiveMineCount, totalTiles);
-      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit) {
-        effectiveWinProb = 0.05;
-      }
-    }
     
-    const safeSpots = totalTiles - effectiveMineCount;
+    // safeSpots already calculated above
+
     const calculatedMaxSafe = Math.floor(safeSpots * effectiveWinProb);
     const firstClickMineChance = 1 - effectiveWinProb;
     const hitFirstClick = Math.random() < (firstClickMineChance * 0.3);
