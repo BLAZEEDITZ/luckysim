@@ -13,8 +13,7 @@ import {
   isCardRed,
   Card as CardType,
   getEffectiveWinProbability,
-  decrementForcedOutcome,
-  checkMaxProfitLimit
+  decrementForcedOutcome
 } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { Coins, Minus, Plus, RotateCcw, Spade, Heart } from "lucide-react";
@@ -191,19 +190,11 @@ export const BlackjackGame = ({ gameConfig }: BlackjackGameProps) => {
     setCanDouble(false);
     setCanSplit(false);
     
-    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
+    // Get effective win probability (handles all priorities including max profit limit)
+    const maxPayout = bet * 2.5; // Maximum possible payout for blackjack
     let { probability: winProb, forceLoss } = user?.id
-      ? await getEffectiveWinProbability('blackjack', user.id, bet)
+      ? await getEffectiveWinProbability('blackjack', user.id, bet, profile?.balance ?? 0, maxPayout)
       : { probability: 0.15, forceLoss: false };
-    
-    // Also check max profit limit
-    if (!forceLoss && user?.id) {
-      const maxPayout = bet * 2.5;
-      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile?.balance ?? 0);
-      if (wouldExceedLimit) {
-        winProb = 0.05;
-      }
-    }
     
     const shouldWin = Math.random() < winProb;
     const playerValue = calculateHandValue(playerHand);

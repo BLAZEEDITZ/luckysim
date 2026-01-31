@@ -11,8 +11,7 @@ import {
   getRandomSlotSymbol,
   SLOT_SYMBOLS,
   getEffectiveWinProbability,
-  decrementForcedOutcome,
-  checkMaxProfitLimit
+  decrementForcedOutcome
 } from "@/lib/gameUtils";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { Coins, RotateCcw, Minus, Plus, Star, Sparkles } from "lucide-react";
@@ -64,17 +63,15 @@ export const SlotMachine = ({ gameConfig }: SlotMachineProps) => {
     const interval = 80;
     let elapsed = 0;
 
-    // Get effective win probability (handles roaming, auto-loss on increase, forced outcomes)
-    const { probability: winProb, forceLoss, forceWin } = await getEffectiveWinProbability('slots', user.id, bet);
-    
-    // Also check max profit limit
-    if (!forceLoss && !forceWin) {
-      const maxPayout = bet * 25;
-      const wouldExceedLimit = await checkMaxProfitLimit(user.id, maxPayout, profile.balance);
-      if (wouldExceedLimit) {
-        // Force loss if would exceed profit limit
-      }
-    }
+    // Get effective win probability (handles all priorities including roaming, user-specific, max profit)
+    const maxPayout = bet * 25; // Maximum possible payout for slots
+    const { probability: winProb, forceLoss, forceWin } = await getEffectiveWinProbability(
+      'slots', 
+      user.id, 
+      bet, 
+      profile.balance, 
+      maxPayout
+    );
 
     const spinInterval = setInterval(async () => {
       // Animate all reels
