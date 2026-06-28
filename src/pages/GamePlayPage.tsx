@@ -8,6 +8,7 @@ import { RouletteGame } from "@/components/games/RouletteGame";
 import { BlackjackGame } from "@/components/games/BlackjackGame";
 import { MinesGame } from "@/components/games/MinesGame";
 import { PlinkoGame } from "@/components/games/PlinkoGame";
+import { ChickenRoadGame } from "@/components/games/ChickenRoadGame";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Lock } from "lucide-react";
 
@@ -55,6 +56,15 @@ const GAME_CONFIGS = {
     minBet: 5,
     maxBet: 500,
     winProbability: 0.33,
+    payoutMultiplier: 2.5,
+  },
+  chicken_road: {
+    id: 'chicken_road',
+    name: 'Chicken Road',
+    enabled: true,
+    minBet: 5,
+    maxBet: 500,
+    winProbability: 0.4,
     payoutMultiplier: 2.5,
   },
 };
@@ -138,6 +148,8 @@ const GamePlayPage = () => {
         return <MinesGame />;
       case 'plinko':
         return <PlinkoGame />;
+      case 'chicken_road':
+        return <ChickenRoadGame />;
       default:
         return null;
     }

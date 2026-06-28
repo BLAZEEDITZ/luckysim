@@ -83,6 +83,7 @@ interface GameWinRates {
   blackjack: number;
   plinko: number;
   mines: number;
+  chicken_road: number;
 }
 
 interface UserWinRate {
@@ -104,7 +105,8 @@ const GAME_NAMES: Record<string, string> = {
   roulette: 'Roulette',
   blackjack: 'Blackjack',
   plinko: 'Plinko',
-  mines: 'Mines'
+  mines: 'Mines',
+  chicken_road: 'Chicken Road'
 };
 
 const AdminPage = () => {
@@ -115,7 +117,7 @@ const AdminPage = () => {
   const [betLogs, setBetLogs] = useState<BetLog[]>([]);
   const [globalWinProbability, setGlobalWinProbability] = useState(15);
   const [gameWinRates, setGameWinRates] = useState<GameWinRates>({
-    slots: 15, roulette: 15, blackjack: 15, plinko: 15, mines: 15
+    slots: 15, roulette: 15, blackjack: 15, plinko: 15, mines: 15, chicken_road: 40
   });
   const [userWinRates, setUserWinRates] = useState<UserWinRate[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -270,6 +272,7 @@ const AdminPage = () => {
         blackjack: (settings['win_probability_blackjack'] ?? 0.15) * 100,
         plinko: (settings['win_probability_plinko'] ?? 0.15) * 100,
         mines: (settings['win_probability_mines'] ?? 0.15) * 100,
+        chicken_road: (settings['win_probability_chicken_road'] ?? 0.40) * 100,
       });
       setRoamingEnabled(settings['roaming_probability_enabled'] === 1);
       setAutoLossOnIncreaseEnabled(settings['auto_loss_on_increase_enabled'] === 1);
@@ -385,7 +388,8 @@ const AdminPage = () => {
       roulette: globalWinProbability,
       blackjack: globalWinProbability,
       plinko: globalWinProbability,
-      mines: globalWinProbability
+      mines: globalWinProbability,
+      chicken_road: globalWinProbability
     };
     setGameWinRates(newGameRates);
 
