@@ -46,6 +46,9 @@ interface Ball {
   vx: number;
   vy: number;
   active: boolean;
+  targetBucket: number;
+  bet: number;
+  landed: boolean;
 }
 
 export const PlinkoGame = () => {
@@ -55,15 +58,16 @@ export const PlinkoGame = () => {
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('medium');
   const [rowCount, setRowCount] = useState<RowCount>(12);
   const [balls, setBalls] = useState<Ball[]>([]);
-  const [dropping, setDropping] = useState(false);
   const [lastMultiplier, setLastMultiplier] = useState<number | null>(null);
   const [lastBucketIndex, setLastBucketIndex] = useState<number | null>(null);
   const ballIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number>();
+  const processedBallsRef = useRef<Set<number>>(new Set());
   const [dimensions, setDimensions] = useState({ width: 400, height: 500 });
 
   const multipliers = MULTIPLIER_SETS[rowCount][riskLevel];
+  const ballsInAir = balls.filter(b => b.active).length;
 
   // Responsive sizing
   useEffect(() => {
