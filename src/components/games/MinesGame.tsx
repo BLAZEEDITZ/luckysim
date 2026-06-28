@@ -382,6 +382,18 @@ export const MinesGame = () => {
     await clearSession();
   };
 
+  // Reset state and immediately start a fresh round in one click
+  const newGame = async () => {
+    setGrid([]);
+    setGameOver(false);
+    setRevealedCount(0);
+    setCurrentMultiplier(1);
+    setMaxSafeReveals(null);
+    setClickOrder([]);
+    setTimeRemaining(null);
+    await startGame();
+  };
+
   if (sessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -610,10 +622,11 @@ export const MinesGame = () => {
             </Button>
           ) : (
             <Button 
-              variant="outline" 
+              variant="gold" 
               size="lg" 
               className="w-full text-sm sm:text-base" 
-              onClick={resetGame}
+              onClick={newGame}
+              disabled={!profile || betAmount > profile.balance}
             >
               <RotateCcw className="w-4 h-4 mr-2" />
               New Game

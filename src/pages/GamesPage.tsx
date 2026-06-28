@@ -85,6 +85,16 @@ const GamesPage = () => {
       minBet: 5,
       maxBet: 500
     },
+    {
+      id: 'chicken_road',
+      icon: '🐔',
+      name: 'Chicken Road',
+      description: 'Cross lane by lane — but mind the traffic! Cash out anytime.',
+      color: 'gold' as const,
+      gradient: 'from-orange-500 to-red-500',
+      minBet: 5,
+      maxBet: 500
+    },
   ];
 
   return (
