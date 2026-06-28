@@ -1,0 +1,1 @@
+INSERT INTO public.game_settings (setting_key, setting_value) VALUES ('win_probability_chicken_road', 0.40) ON CONFLICT (setting_key) DO NOTHING;
